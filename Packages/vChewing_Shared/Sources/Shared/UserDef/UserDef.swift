@@ -76,6 +76,7 @@ nonisolated public enum UserDef: String, CaseIterable, Identifiable, Sendable {
   case kShowHanyuPinyinInCompositionBuffer = "ShowHanyuPinyinInCompositionBuffer"
   case kInlineDumpPinyinInLieuOfZhuyin = "InlineDumpPinyinInLieuOfZhuyin"
   case kFetchSuggestionsFromPerceptionOverrideModel = "FetchSuggestionsFromPerceptionOverrideModel"
+  case kApplyContextualCandidateReranking = "ApplyContextualCandidateReranking"
   case kUseFixedCandidateOrderOnSelection = "UseFixedCandidateOrderOnSelection"
   case kAutoCorrectReadingCombination = "AutoCorrectReadingCombination"
   case kReadingNarrationCoverage = "ReadingNarrationCoverage"
@@ -427,6 +428,7 @@ nonisolated extension UserDef {
     switch self {
     case .kIsDebugModeEnabled: return .bool(false)
     case .kFailureFlagForPOMObservation: return .bool(false)
+    case .kApplyContextualCandidateReranking: return .bool(false)
     case .kUserPhrasesDatabaseBypassed: return .bool(false)
     case .kReplaceSymbolMenuNodeWithUserSuppliedData: return .bool(true)
     case .kCandidateServiceMenuContents: return .arrayOfStrings(Self.defaultValue4CandidateServiceMenuContents)
@@ -545,6 +547,8 @@ nonisolated extension UserDef {
     switch self {
     case .kIsDebugModeEnabled: return .init(userDef: self, shortTitle: "i18n:UserDef.kIsDebugModeEnabled.shortTitle")
     case .kFailureFlagForPOMObservation: return nil
+    // 尚未對外曝露：等 `testBench01` 有數字、確定要開之後再補 shortTitle 與四語系翻譯。
+    case .kApplyContextualCandidateReranking: return nil
     case .kEnableCandidateWindowAnimation: return .init(
         userDef: self,
         shortTitle: "i18n:UserDef.kEnableCandidateWindowAnimation.shortTitle"

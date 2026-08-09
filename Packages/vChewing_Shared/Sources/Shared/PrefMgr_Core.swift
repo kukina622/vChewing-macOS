@@ -147,6 +147,12 @@ public final class PrefMgr: PrefMgrProtocol, Sendable {
   @AppProperty(userDef: .kFetchSuggestionsFromPerceptionOverrideModel)
   public var fetchSuggestionsFromPerceptionOverrideModel: Bool
 
+  /// 是否以上下文模型重排組字區的同音詞候選。
+  ///
+  /// 目前是隱藏旗標（無設定介面），預設關閉。詳見 `DevLab/AICandidateSelection_Design.md` §4。
+  @AppProperty(userDef: .kApplyContextualCandidateReranking)
+  public var applyContextualCandidateReranking: Bool
+
   @AppProperty(userDef: .kReducePOMLifetimeToNoMoreThan12Hours)
   public var reducePOMLifetimeToNoMoreThan12Hours: Bool
 
