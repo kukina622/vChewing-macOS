@@ -18,6 +18,7 @@ let package = Package(
     .package(path: "../Jad_BookmarkManager"),
     .package(path: "../vChewing_ModifierKeyHitChecker"),
     .package(path: "../vChewing_CandidateWindow"),
+    .package(path: "../vChewing_CharLM"),
     .package(path: "../vChewing_Hotenka"),
     .package(path: "../vChewing_Homa"),
     .package(path: "../vChewing_IMKUtils"),
@@ -39,6 +40,8 @@ let package = Package(
       dependencies: [
         .product(name: "BookmarkManager", package: "Jad_BookmarkManager"),
         .product(name: "CandidateWindow", package: "vChewing_CandidateWindow"),
+        .product(name: "CharLM", package: "vChewing_CharLM"),
+        .product(name: "HomaReranker", package: "vChewing_CharLM"),
         .product(name: "FolderMonitor", package: "vChewing_FolderMonitor"),
         .product(name: "Hotenka", package: "vChewing_Hotenka"),
         .product(name: "IMKUtils", package: "vChewing_IMKUtils"),
@@ -69,6 +72,8 @@ let package = Package(
       name: "MainAssembly4DarwinTests",
       dependencies: [
         "MainAssembly4Darwin",
+        .product(name: "CharLM", package: "vChewing_CharLM"),
+        .product(name: "HomaReranker", package: "vChewing_CharLM"),
         .product(name: "Homa", package: "vChewing_Homa"),
         .product(name: "HomaSharedTestComponents", package: "vChewing_Homa"),
         .product(name: "LMAssemblyMaterials4Tests", package: "vChewing_LangModelAssembly"),
