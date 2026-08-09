@@ -762,6 +762,52 @@ extension InputHandlerProtocol {
     }
   }
 
+  /// 以上下文模型重排組字區內的同音詞候選。
+  ///
+  /// 時機點刻意排在 `retrievePOMSuggestions(apply:)` **之後**：POM 的覆寫會決定各節點
+  /// 的當前選擇，重排器要在那個基礎上判斷。
+  ///
+  /// ⚠️ 但**不能**指望 POM 的覆寫會讓重排器自動讓路：`retrievePOMSuggestions` 呼叫
+  /// `overrideCandidateLiteral` 時沒有傳 `isExplicitlyOverridden`（預設 false），
+  /// 因此 POM 選中的節點在 `GramInPath.isExplicit` 上看起來與未覆寫者無異。
+  /// 而 `fetchCandidates` 回傳的權重是原始詞庫機率、不含覆寫加成，POM 的建議在
+  /// 重排時本身是零優勢的。個人化訊號因此改以下方的 `pomScores` 顯式參與融合：
+  ///
+  /// ```
+  /// 最終 = Homa 分數 + λ_LM × LM 分數 + λ_POM × POM 分數
+  /// ```
+  ///
+  /// 設計依據見 `DevLab/AICandidateSelection_Design.md` §4.2 的位置 ③、§4.4 的三分工。
+  /// 沒有模型、或偏好未開啟時，這個函式不做任何事。
+  func applyContextualReranking() {
+    guard prefs.applyContextualCandidateReranking else { return }
+    /// 逐字選字模式下組字區只有一個字，沒有上下文可言。
+    guard !prefs.useSCPCTypingMode else { return }
+    guard let reranker = currentLM.contextualReranker else { return }
+    // POM 停用時不傳查詢器，融合公式自動退化成兩項。
+    guard prefs.fetchSuggestionsFromPerceptionOverrideModel else {
+      reranker.apply(to: assembler)
+      return
+    }
+    // 支持度刻意做成 0/1 而非沿用 `LXPerceptor` 的原始權重：後者的方向性有既有疑義
+    // （`calculateWeight()` 算的是 `score = -base × 常數`，挑選時卻取最大值，
+    // 等於偏好 base 較小者）。在那件事釐清之前，這裡只採信 POM「挑了誰」這個結論，
+    // 不採信它給的分數大小，權重完全交由 `λ_POM` 承擔。
+    let currentLM = currentLM
+    reranker.apply(to: assembler) { assembledSentence, location in
+      let suggestion = currentLM.fetchPOMSuggestion(
+        assembledResult: assembledSentence,
+        cursor: location,
+        timestamp: Date().timeIntervalSince1970
+      )
+      guard !suggestion.isEmpty else { return [:] }
+      return .init(
+        suggestion.candidates.map { ($0.value, 1.0) },
+        uniquingKeysWith: { lhs, _ in lhs }
+      )
+    }
+  }
+
   /// 向漸退引擎詢問可能的選字建議、且套用給組字器內的當前游標位置。
   @discardableResult
   func retrievePOMSuggestions(
