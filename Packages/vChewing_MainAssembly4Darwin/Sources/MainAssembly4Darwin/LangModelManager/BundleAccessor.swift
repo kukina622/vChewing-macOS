@@ -33,6 +33,13 @@ extension Foundation.Bundle {
       Bundle(for: _BundleFinder.self).resourceURL,
       // SPM build directory / command-line tools.
       Bundle.main.bundleURL,
+      // `swift test`: this module is statically linked into the `.xctest` bundle,
+      // and the resource bundle is deposited as its *sibling* inside the SPM build
+      // directory — neither `resourceURL` above reaches it. Without this candidate
+      // `Bundle.currentSPM` traps in every test process, which in turn makes any
+      // resource-backed feature (factory lexicon, conversion dictionary, CharLM
+      // weights) impossible to cover with tests.
+      Bundle(for: _BundleFinder.self).bundleURL.deletingLastPathComponent(),
     ]
     for candidate in candidates {
       guard let url = candidate?.appendingPathComponent(bundleName + ".bundle"),
