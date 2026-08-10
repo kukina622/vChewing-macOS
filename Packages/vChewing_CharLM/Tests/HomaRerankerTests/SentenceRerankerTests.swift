@@ -211,14 +211,26 @@ struct SentenceRerankerSafetyTests {
     #expect(counting.invocations.allSatisfy { !$0.contains("。") })
   }
 
-  @Test("左文是已定案的字面，且逐節點累積")
+  @Test("貪婪模式（beamWidth = 1）：左文是已定案的字面，且逐節點累積")
   func feedsDecidedLeftContext() throws {
     let assembler = try makeAssembler(["ni3", "shi4"])
     let recorder = ContextRecordingReranker()
-    SentenceReranker(reranker: recorder).apply(to: assembler)
+    SentenceReranker(reranker: recorder, configuration: .init(beamWidth: 1))
+      .apply(to: assembler)
     #expect(recorder.contexts.count == 2)
     #expect(recorder.contexts[0] == "")   // 第一個節點左側沒有東西
     #expect(recorder.contexts[1] == "你") // 第二個節點看得到前一個節點的定案值
+  }
+
+  @Test("Beam 會為每條假設各問一次，因此看得到分岔後的左文")
+  func beamExploresAlternativeContexts() throws {
+    let assembler = try makeAssembler(["ni3", "shi4"])
+    let recorder = ContextRecordingReranker()
+    SentenceReranker(reranker: recorder, configuration: .init(beamWidth: 4))
+      .apply(to: assembler)
+    // 第一個節點問一次（左文為空），第二個節點為「你」與「妳」各問一次。
+    #expect(recorder.contexts.first == "")
+    #expect(Set(recorder.contexts) == ["", "你", "妳"])
   }
 
   @Test("剪枝之後仍保留當前選擇，否則會被無條件替換")
@@ -300,6 +312,61 @@ struct SentenceRerankerSafetyTests {
 
     #expect(recorder.seen.first?.keys.sorted() == ["式", "是"])
     #expect(recorder.seen.first?["式"] == 1.0)
+  }
+
+  @Test("後文的證據可以回頭改掉前面的選擇")
+  func laterEvidenceRewritesEarlierChoice() throws {
+    /// 只有在左文是「妳」的時候才大力偏好「式」。
+    /// 貪婪會先鎖定詞庫首選「你」，因而永遠碰不到這個加分。
+    struct PairPreferringReranker: CandidateReranker {
+      func rescore(_ candidates: [RerankCandidate], leftContext: String) -> [Double] {
+        candidates.map {
+          $0.value == "式" && leftContext.hasSuffix("妳") ? $0.priorScore + 10 : $0.priorScore
+        }
+      }
+    }
+
+    let greedy = try makeAssembler(["ni3", "shi4"])
+    SentenceReranker(reranker: PairPreferringReranker(), configuration: .init(beamWidth: 1))
+      .apply(to: greedy)
+    #expect(greedy.assembledSentence.values.joined() == "你是") // 貪婪看不到那條路
+
+    let beamed = try makeAssembler(["ni3", "shi4"])
+    let changes = SentenceReranker(
+      reranker: PairPreferringReranker(), configuration: .init(beamWidth: 4)
+    ).apply(to: beamed)
+    #expect(beamed.assembledSentence.values.joined() == "妳式")
+    #expect(changes.count == 2) // 兩個節點都被改了
+  }
+
+  @Test("即使 beam 想改，使用者選過的節點仍然釘死")
+  func beamNeverTouchesExplicitNodes() throws {
+    let assembler = try makeAssembler(["ni3", "shi4"])
+    try assembler.overrideCandidate(
+      Homa.CandidatePair(keyArray: ["ni3"], value: "你"),
+      at: 0, type: .withSpecified, isExplicitlyOverridden: true
+    )
+    /// 這個重排器對「妳」開出遠高於一切的加分。若釘死失效，它一定會被選走。
+    struct GreedyForNi: CandidateReranker {
+      func rescore(_ candidates: [RerankCandidate], leftContext _: String) -> [Double] {
+        candidates.map { $0.value == "妳" ? $0.priorScore + 1_000 : $0.priorScore }
+      }
+    }
+    SentenceReranker(reranker: GreedyForNi(), configuration: .init(beamWidth: 8))
+      .apply(to: assembler)
+    #expect(assembler.assembledSentence.values.joined().hasPrefix("你"))
+  }
+
+  @Test("minimumMargin 以整條路徑的總分為準")
+  func marginAppliesToWholePath() throws {
+    let assembler = try makeAssembler(["ni3", "shi4"])
+    // 「妳」比「你」低 0.8 分，加成 1.0 後淨勝 0.2，擋不過 1.0 的門檻。
+    let reranker = PreferringReranker(preferred: "妳", bonus: 1.0)
+    let blocked = SentenceReranker(
+      reranker: reranker, configuration: .init(beamWidth: 4, minimumMargin: 1.0)
+    ).apply(to: assembler)
+    #expect(blocked.isEmpty)
+    #expect(assembler.assembledSentence.values.joined().hasPrefix("你"))
   }
 
   @Test("空組字器不崩潰")

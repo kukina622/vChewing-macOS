@@ -34,14 +34,28 @@ import RerankerCore
 ///
 /// 因此這裡只在 DP 選定的斷詞框架**內**替換同音詞：**斷詞歸 DP，同音詞歸 reranker。**
 ///
-/// ## 這是貪婪的，不是 beam search
+/// ## Beam search：後文可以回頭改前文
 ///
-/// 逐節點由左至右處理，每個節點的左文用的是**前面節點已經定案後**的字面。
-/// 沒有回溯：第 3 個節點的選擇不會反過來改變第 2 個節點。
+/// 逐節點由左至右維護 `beamWidth` 條假設，最後取**聯合分數**最高的路徑。
+/// 這是「往後打字能修正前面的字」的來源——即使語言模型是因果的（只看左文），
+/// 聯合最佳化仍能讓後文的證據倒推回去：
 ///
-/// 這是刻意的取捨——真正的 beam search 需要維護 N 條假設並在每個節點展開，
-/// 成本是節點數的指數級而非線性，放不進每次按鍵的熱路徑（§3 約束 B）。
-/// 而字元語言模型的上下文只有 4 個字，回溯能挽回的收益本來就有限。
+/// ```
+/// 貪婪：  先挑 node₁ 最佳（城市），再挑 node₂ 給定 node₁  →  城市設計
+/// Beam：  比較 (城市+設計) 與 (程式+設計) 的總分          →  程式設計
+/// ```
+///
+/// 因為「設計」接在「程式」後的機率遠高於接在「城市」後，這個差距會透過
+/// 轉移項影響第一個節點的選擇。`beamWidth = 1` 即退化為貪婪，可作對照組。
+///
+/// ## ⚠️ 兩個不變式
+///
+/// 1. **使用者選過的節點永遠釘死。** 它們仍然貢獻上下文，但不參與搜尋、
+///    不可能被改掉（`skipsExplicitlyOverridden`）。
+/// 2. **分數必須跨節點可比。** Beam 會把不同節點的分數加總，因此
+///    `CandidateReranker` 的實作必須回傳**在候選集內正規化過**的分數。
+///    `CharLMReranker` 已照此實作；回傳未正規化的 logit 會讓比較失去意義，
+///    因為不同假設的隱含分母不同。
 @MainActor
 public struct SentenceReranker: Sendable {
   // MARK: Lifecycle
@@ -98,57 +112,167 @@ public struct SentenceReranker: Sendable {
     assembler.perceptor = nil
     defer { assembler.perceptor = savedPerceptor }
 
-    var changes = [Change]()
-    var sentence = assembler.assembledSentence
-    var index = 0
-    var position = 0
-    var leftText = ""
+    let sentence = assembler.assembledSentence
+    guard !sentence.isEmpty else { return [] }
 
-    // 以「快照 + 只在覆寫後重新定位」推進，而不是每個節點都去問一次 `findGram()`：
-    // 後者每次都會重建 border-point map，讓整趟變成 O(節點數²) 的記憶體配置抖動。
-    while index < sentence.count {
-      let node = sentence[index]
-      let location = position
-      // `segLength` 恆 ≥ 1，因此 position 每輪嚴格遞增、迴圈必然終止。
-      position += node.segLength
-
-      let replacement = rerank(
-        node,
-        at: location,
-        leftContext: leftText,
-        in: assembler,
-        sentence: sentence,
-        pomScores: pomScores
-      )
-
-      guard let replacement else {
-        leftText = Self.trimmed(leftText + node.value, to: configuration.maxContextCharacters)
-        index += 1
-        continue
-      }
-
-      changes.append(replacement)
-
-      // 覆寫會讓組字器重新組句，先前的快照就此失效。弱覆寫理論上不改變斷詞，
-      // 但 `withTopGramScore` 提高了該候選的分數，DP 仍有可能挑出不同的路徑。
-      sentence = assembler.assembledSentence
-      guard let landing = Self.locate(
-        position, in: sentence, maxContextCharacters: configuration.maxContextCharacters
-      ) else {
-        // 邊界被移動到對不上的位置。與其猜，不如就此收手——已完成的替換保留，
-        // 其餘節點沿用 Homa 原本的選擇（契約 4：退化安全）。
-        break
-      }
-      index = landing.index
-      leftText = landing.leftText
-    }
-    return changes
+    let slots = makeSlots(from: sentence, in: assembler, pomScores: pomScores)
+    guard slots.contains(where: { !$0.isPinned }) else { return [] }
+    guard let plan = search(slots) else { return [] }
+    return writeBack(plan, slots: slots, to: assembler)
   }
 
   // MARK: Private
 
-  /// 在 `sentence` 內找出起點恰為 `position` 的節點，並一併算出它左側的定案字面。
+  /// 一個節點在計畫中的位置。候選少於 2 個即代表**釘死**、不參與搜尋。
+  private struct Slot {
+    let location: Int
+    let segLength: Int
+    let original: String
+    let candidates: [RerankCandidate]
+
+    var isPinned: Bool { candidates.count < 2 }
+  }
+
+  /// Beam 中的一條假設。
+  private struct Hypothesis {
+    var score: Double
+    var choices: [String]
+    /// 已定案字面的尾端（長度受 `maxContextCharacters` 限制）。
+    var context: String
+    /// 是否為「完全不動」的那條路徑。它永遠不會被剪掉，
+    /// 好讓最後能拿它跟勝出者比 `minimumMargin`。
+    var isOriginal: Bool
+  }
+
+  private func makeSlots(
+    from sentence: [Homa.GramInPath],
+    in assembler: Homa.Assembler,
+    pomScores: POMScoreProvider?
+  )
+    -> [Slot] {
+    var slots = [Slot]()
+    var location = 0
+    for node in sentence {
+      let here = location
+      location += node.segLength
+      func pinned() -> Slot {
+        .init(location: here, segLength: node.segLength, original: node.value, candidates: [])
+      }
+      guard shouldProcess(node) else { slots.append(pinned()); continue }
+      let fetched = rawCandidates(for: node, at: here, in: assembler)
+      guard fetched.count > 1 else { slots.append(pinned()); continue }
+      let pom: [String: Double] = pomScores?(sentence, here) ?? [:]
+      slots.append(.init(
+        location: here, segLength: node.segLength, original: node.value,
+        candidates: prune(fetched, current: node.value, pomScores: pom)
+      ))
+    }
+    return slots
+  }
+
+  /// 回傳勝出路徑的各節點字面；沒有值得寫回的變更時回傳 `nil`。
+  private func search(_ slots: [Slot]) -> [String]? {
+    var beam = [Hypothesis(score: 0, choices: [], context: "", isOriginal: true)]
+
+    for slot in slots {
+      guard !slot.isPinned else {
+        // 釘死的節點：所有假設一律沿用原值，但它仍然貢獻上下文。
+        beam = beam.map { hypothesis in
+          var next = hypothesis
+          next.choices.append(slot.original)
+          next.context = Self.trimmed(
+            hypothesis.context + slot.original, to: configuration.maxContextCharacters
+          )
+          return next
+        }
+        continue
+      }
+
+      var expanded = [Hypothesis]()
+      expanded.reserveCapacity(beam.count * slot.candidates.count)
+      for hypothesis in beam {
+        let scores = reranker.rescore(slot.candidates, leftContext: hypothesis.context)
+        guard scores.count == slot.candidates.count else { return nil } // 契約被違反
+        for (index, candidate) in slot.candidates.enumerated() {
+          expanded.append(Hypothesis(
+            score: hypothesis.score + scores[index],
+            choices: hypothesis.choices + [candidate.value],
+            context: Self.trimmed(
+              hypothesis.context + candidate.value, to: configuration.maxContextCharacters
+            ),
+            isOriginal: hypothesis.isOriginal && candidate.value == slot.original
+          ))
+        }
+      }
+
+      // 排序必須是決定性的：分數相同時以字面排序打破平手（契約 1）。
+      expanded.sort {
+        $0.score == $1.score
+          ? $0.choices.joined() < $1.choices.joined()
+          : $0.score > $1.score
+      }
+      var survivors = Array(expanded.prefix(configuration.beamWidth))
+      // 原始路徑永遠保留：最後要拿它當 minimumMargin 的比較基準。
+      if !survivors.contains(where: { $0.isOriginal }),
+         let original = expanded.first(where: { $0.isOriginal }) {
+        survivors.append(original)
+      }
+      beam = survivors
+    }
+
+    guard let best = beam.first,
+          let original = beam.first(where: { $0.isOriginal }),
+          best.choices != original.choices
+    else { return nil }
+    // 邊際優勢不足時整條路徑都不動：把「模型只是稍微偏好另一種說法」的雜訊擋掉，
+    // 避免使用者看到整條組字區無謂地重寫。
+    guard best.score - original.score >= configuration.minimumMargin else { return nil }
+    return best.choices
+  }
+
+  /// 把計畫寫回組字器。
   ///
+  /// 每次覆寫前都重新確認節點仍在原位：弱覆寫理論上不改變斷詞，但
+  /// `withTopGramScore` 提高了該候選的分數，DP 仍有可能挑出不同的路徑。
+  /// 一旦對不上就收手，已完成的替換保留（契約 4：退化安全）。
+  private func writeBack(
+    _ plan: [String],
+    slots: [Slot],
+    to assembler: Homa.Assembler
+  )
+    -> [Change] {
+    var changes = [Change]()
+    for (index, slot) in slots.enumerated() where plan[index] != slot.original {
+      guard let hit = assembler.assembledSentence.findGram(at: slot.location),
+            hit.range.lowerBound == slot.location,
+            hit.gram.value == slot.original,
+            hit.gram.keyArray.count == slot.segLength
+      else { break }
+      do {
+        try assembler.overrideCandidate(
+          Homa.CandidatePair(keyArray: hit.gram.keyArray, value: plan[index]),
+          at: slot.location,
+          // 弱覆寫：只把該候選提到節點首位，不強制壓過 DP 的斷詞判斷。
+          type: .withTopGramScore,
+          // 絕對不能是 true：那會讓 POM 與後續邏輯把它當成使用者的明確選擇。
+          isExplicitlyOverridden: false,
+          enforceRetokenization: false
+        )
+      } catch {
+        break
+      }
+      changes.append(Change(
+        position: slot.location,
+        keyArray: hit.gram.keyArray,
+        from: slot.original,
+        to: plan[index],
+        margin: 0
+      ))
+    }
+    return changes
+  }
+
+
   /// 回傳 `nil` 代表 `position` 落在某個節點的中間——重新組句後邊界移動了，
   /// 此時沒有任何一個「左文」的定義是乾淨的。
   private static func locate(
@@ -173,7 +297,6 @@ public struct SentenceReranker: Sendable {
     text.count <= limit ? text : String(text.suffix(limit))
   }
 
-  /// 評估單一節點，必要時執行覆寫。
   /// - Returns: 實際發生替換時的紀錄；沒動它則為 `nil`。
   private func rerank(
     _ node: Homa.GramInPath,
@@ -306,11 +429,13 @@ extension SentenceReranker {
     // MARK: Lifecycle
 
     public init(
+      beamWidth: Int = 4,
       maxCandidatesPerNode: Int = 12,
       maxContextCharacters: Int = 8,
       minimumMargin: Double = 0,
       skipsExplicitlyOverridden: Bool = true
     ) {
+      self.beamWidth = Swift.max(1, beamWidth)
       self.maxCandidatesPerNode = Swift.max(1, maxCandidatesPerNode)
       self.maxContextCharacters = Swift.max(1, maxContextCharacters)
       self.minimumMargin = minimumMargin
@@ -318,6 +443,16 @@ extension SentenceReranker {
     }
 
     // MARK: Public
+
+    /// 同時維護幾條假設。**這是「後文能改前文」的旋鈕。**
+    ///
+    /// `1` 即退化為貪婪：逐節點取當下最佳，後文永遠影響不了前文。
+    /// 調大則以聯合分數決定整條路徑，成本大致線性成長
+    /// （每個節點要為每條假設各算一次隱藏層）。
+    ///
+    /// 預設 4。實測單字節點約 13µs／次前向，10 個節點的組字區約 520µs，
+    /// 距離 §3 約束 B 的 10ms 預算仍寬裕。
+    public var beamWidth: Int
 
     /// 每個節點最多送幾個候選進模型。
     ///

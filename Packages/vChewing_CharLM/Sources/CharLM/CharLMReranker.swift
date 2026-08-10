@@ -135,11 +135,27 @@ public struct CharLMReranker: CandidateReranker {
         normalization: normalization
       ).map(Double.init)
 
+    // 在**候選集內**正規化，而非掃全詞彙表。
+    //
+    // 單一節點內比大小時，減掉一個共同常數不影響排序——所以貪婪路徑的結果
+    // 與正規化前完全相同。但 beam search 要把不同節點的分數加總，而不同假設
+    // 的左文不同、隱含的分母也不同，不正規化就加不得。
+    //
+    // 之所以不用全詞彙表的 `logSumExp`：那是每次 30µs 的全表掃描，而受限解碼
+    // 本來就只在候選集內做決策，對候選集正規化才是正確的機率解釋。
+    let normalizer = Self.logSumExp(contextScores)
     return zip(candidates, contextScores).map { candidate, contextScore in
       candidate.priorScore
-        + lambdaLM * contextScore
+        + lambdaLM * (contextScore - normalizer)
         + lambdaPOM * candidate.pomScore * Double(candidate.value.count)
     }
+  }
+
+  /// 數值穩定的 log-sum-exp（先減去最大值再取 exp，避免溢位）。
+  private static func logSumExp(_ values: [Double]) -> Double {
+    guard let maximum = values.max(), maximum.isFinite else { return 0 }
+    let total = values.reduce(0.0) { $0 + Foundation.exp($1 - maximum) }
+    return maximum + Foundation.log(total)
   }
 
   // MARK: Private
