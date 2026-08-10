@@ -428,7 +428,7 @@ nonisolated extension UserDef {
     switch self {
     case .kIsDebugModeEnabled: return .bool(false)
     case .kFailureFlagForPOMObservation: return .bool(false)
-    case .kApplyContextualCandidateReranking: return .bool(false)
+    case .kApplyContextualCandidateReranking: return .bool(true)
     case .kUserPhrasesDatabaseBypassed: return .bool(false)
     case .kReplaceSymbolMenuNodeWithUserSuppliedData: return .bool(true)
     case .kCandidateServiceMenuContents: return .arrayOfStrings(Self.defaultValue4CandidateServiceMenuContents)
