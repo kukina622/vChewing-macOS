@@ -226,11 +226,11 @@ private struct ByteReader {
         }
       case .float16:
         return (0 ..< count).map { index in
-          Float(Float16(bitPattern: UInt16(
+          Self.float(fromHalfBits: UInt16(
             littleEndian: raw.loadUnaligned(
               fromByteOffset: start + index * 2, as: UInt16.self
             )
-          )))
+          ))
         }
       }
     }
@@ -240,6 +240,41 @@ private struct ByteReader {
 
   private let data: Data
   private var offset: Int
+
+  /// IEEE 754 binary16 → binary32。
+  ///
+  /// ⚠️ 手寫而非使用 `Float16`：後者在 **x86_64 macOS 上不存在**，而 `make release`
+  /// 仍會建置 x86_64 slice 再 lipo 成 universal binary（見 Makefile 的 universal-build）。
+  /// 改用 `Float16` 會讓 arm64 建得過、x86_64 直接編譯失敗——而且錯誤訊息會表現成
+  /// `withUnsafeBytes` 的泛型參數推導失敗，跟真正的原因差很遠。
+  ///
+  /// 要拿掉這段的前提是 Makefile 先停止產出 x86_64 slice，不是「產品不再支援 Intel 機種」。
+  ///
+  /// 轉換只在載入時執行一次，成本可忽略。
+  private static func float(fromHalfBits bits: UInt16) -> Float {
+    let sign = UInt32(bits & 0x8000) << 16
+    let exponent = UInt32((bits >> 10) & 0x1F)
+    let mantissa = UInt32(bits & 0x03FF)
+
+    switch exponent {
+    case 0:
+      guard mantissa != 0 else { return Float(bitPattern: sign) } // ±0
+      // 非正規數：左移至隱含位就位，並據此回推指數。
+      var normalized = mantissa
+      var shifts: UInt32 = 0
+      while normalized & 0x0400 == 0 {
+        normalized <<= 1
+        shifts += 1
+      }
+      normalized &= 0x03FF
+      let biased = UInt32(113) &- shifts // (1 - shifts) - 15 + 127
+      return Float(bitPattern: sign | (biased << 23) | (normalized << 13))
+    case 0x1F:
+      return Float(bitPattern: sign | 0x7F80_0000 | (mantissa << 13)) // ±inf / NaN
+    default:
+      return Float(bitPattern: sign | ((exponent + 112) << 23) | (mantissa << 13))
+    }
+  }
 
   private func ensure(_ count: Int) throws {
     guard count >= 0, offset + count <= data.count else {
