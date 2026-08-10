@@ -196,6 +196,47 @@ extension MainAssemblyTests {
     )
   }
 
+  /// 診斷：往後打字會不會回頭改掉前面已經定案的字？
+  @Test("[診斷] 逐鍵觀察組字區的回溯變化")
+  func test606_IncrementalRewrite() throws {
+    try #require(CharLMRerankerMgr.reranker(for: .imeModeCHT) != nil)
+    let factoryPath = try #require(LMMgr.getCoreDictionaryDBPath(factory: true))
+    defer {
+      _ = LMAssembly.LMInstantiator.connectToTestFactoryDictionary(
+        textMapData: LMATestsData.textMapTestCoreLMData
+      )
+      testHandler.prefs.keyboardParser = KeyboardParser.ofStandard.rawValue
+      testHandler.ensureKeyboardParser()
+    }
+    LMAssembly.LMInstantiator.connectFactoryDictionary(textMapPath: factoryPath)
+    testHandler.prefs.keyboardParser = KeyboardParser.ofHanyuPinyin.rawValue
+    testHandler.ensureKeyboardParser()
+    testHandler.prefs.useSCPCTypingMode = false
+    testHandler.prefs.fetchSuggestionsFromPerceptionOverrideModel = false
+    testHandler.currentLM.syncPrefs()
+    PrefMgr.shared.applyContextualCandidateReranking = true
+    testLM.contextualReranker = CharLMRerankerMgr.reranker(for: .imeModeCHT)
+
+    // 每組：一段一段往後打，觀察前面的字有沒有被回頭改掉。
+    let scripts: [(String, [String])] = [
+      ("後文能否救回前文（程式 vs 城市）", ["cheng2shi4", "she4", "ji4"]),
+      ("前文先給足（對照組）", ["dian4nao3", "cheng2", "shi4"]),
+      ("後文能否救回前文（攻勢 vs 公式）", ["gong1shi4", "meng3", "lie4"]),
+    ]
+
+    for (title, chunks) in scripts {
+      print("\n┌─ \(title) ─────────────────")
+      testSession.switchState(.ofAbortion())
+      var typed = ""
+      for chunk in chunks {
+        typed += chunk
+        typeSentenceOrCandidates(chunk)
+        print("│ 打完 \(typed.padding(toLength: 26, withPad: " ", startingAt: 0))→  \(testSession.state.displayedText)")
+      }
+      print("└────────────────────────────────")
+    }
+  }
+
   // MARK: - 內部
 
   /// 驗收案例集。

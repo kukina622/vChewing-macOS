@@ -130,6 +130,206 @@ extension MainAssemblyTests {
     )
   }
 
+  /// 診斷：正解到底在不在 Homa 的候選格裡？
+  ///
+  /// 這個數字決定「換掉 Homa」有沒有意義：
+  ///
+  /// - oracle 遠低於 100% → 候選格裡根本沒有正解，再強的打分模型也救不回來，
+  ///   瓶頸在詞庫／斷詞層，換掉 Homa 才有意義。
+  /// - oracle 接近 100% → 正解一直都在，只是分數排不上去，
+  ///   換掉 Homa 毫無幫助，該換的是打分的模型。
+  @Test("[診斷] 候選格的 oracle 可達率")
+  func test605_LatticeOracleReachability() throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let corpusPath = environment["VCHEWING_RERANK_CORPUS"] else { return }
+    let limit = environment["VCHEWING_RERANK_LIMIT"].flatMap(Int.init) ?? 500
+    let factoryPath = try #require(LMMgr.getCoreDictionaryDBPath(factory: true))
+    defer {
+      _ = LMAssembly.LMInstantiator.connectToTestFactoryDictionary(
+        textMapData: LMATestsData.textMapTestCoreLMData
+      )
+    }
+    LMAssembly.LMInstantiator.connectFactoryDictionary(textMapPath: factoryPath)
+    testHandler.currentLM.syncPrefs()
+
+    let lexicon = try LexiconReadings(txtMapPath: factoryPath)
+    let cases = try lexicon.makeCases(corpusPath: corpusPath, limit: limit)
+    let assembler = testHandler.assembler
+
+    var reachable = 0
+    var evaluated = 0
+    var unreachableSamples = [String]()
+
+    for item in cases {
+      assembler.clear()
+      var ok = true
+      for reading in item.readings {
+        guard (try? assembler.insertKey(reading)) != nil else { ok = false; break }
+      }
+      guard ok else { continue }
+      _ = assembler.assemble()
+      evaluated += 1
+
+      // 可達性 DP：從讀音位置 0 出發，看能否用候選拼出完整的正解。
+      let expected = Array(item.expected)
+      let count = item.readings.count
+      var canReach = [Bool](repeating: false, count: count + 1)
+      canReach[0] = true
+      // 讀音位置 == 字元位置（同音組內每個候選的字數等於音節數）。
+      for position in 0 ..< count where canReach[position] {
+        for candidate in assembler.fetchCandidates(at: position, filter: .beginAt) {
+          let length = candidate.pair.keyArray.count
+          guard position + length <= count else { continue }
+          guard candidate.pair.value.count == length else { continue }
+          let slice = String(expected[position ..< position + length])
+          if candidate.pair.value == slice { canReach[position + length] = true }
+        }
+      }
+      if canReach[count] {
+        reachable += 1
+      } else if unreachableSamples.count < 10 {
+        unreachableSamples.append(item.expected)
+      }
+    }
+
+    let rate = evaluated == 0 ? 0 : Double(reachable) / Double(evaluated) * 100
+    print("""
+
+    ┌─ 候選格 oracle 可達率 ───────────────────────────────
+    │ 評估案例      \(evaluated)
+    │ 正解可達      \(reachable)（\(String(format: "%.2f%%", rate))）
+    │ 正解不可達    \(evaluated - reachable)
+    └──────────────────────────────────────────────────────
+    """)
+    if !unreachableSamples.isEmpty {
+      print("── 候選格裡湊不出正解的樣本 ──")
+      unreachableSamples.forEach { print("  \($0)") }
+    }
+  }
+
+  /// 一次性組態掃描：beam 寬度 × 句首是否讓 LM 表態。
+  @Test("[掃描] beam 與 minimumLeftContext 的交互作用")
+  func test607_ConfigSweep() throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let corpusPath = environment["VCHEWING_RERANK_CORPUS"] else { return }
+    let limit = environment["VCHEWING_RERANK_LIMIT"].flatMap(Int.init) ?? 500
+    let factoryPath = try #require(LMMgr.getCoreDictionaryDBPath(factory: true))
+    defer {
+      _ = LMAssembly.LMInstantiator.connectToTestFactoryDictionary(
+        textMapData: LMATestsData.textMapTestCoreLMData
+      )
+      testLM.contextualReranker = nil
+    }
+    LMAssembly.LMInstantiator.connectFactoryDictionary(textMapPath: factoryPath)
+    testHandler.currentLM.syncPrefs()
+
+    let url = try #require(Bundle.currentSPM.url(forResource: "charlm-cht", withExtension: "bin"))
+    let model = try CharLM(contentsOf: url)
+    let lexicon = try LexiconReadings(txtMapPath: factoryPath)
+    let cases = try lexicon.makeCases(corpusPath: corpusPath, limit: limit)
+
+    func run(_ label: String, _ reranker: SentenceReranker?) {
+      PrefMgr.shared.applyContextualCandidateReranking = reranker != nil
+      testLM.contextualReranker = reranker
+      let assembler = testHandler.assembler
+      var exact = 0, correct = 0, total = 0
+      let started = DispatchTime.now().uptimeNanoseconds
+      for item in cases {
+        assembler.clear()
+        var ok = true
+        for r in item.readings where ok {
+          if (try? assembler.insertKey(r)) == nil { ok = false }
+        }
+        guard ok else { continue }
+        _ = assembler.assemble()
+        reranker?.apply(to: assembler)
+        let got = assembler.assembledSentence.values.joined()
+        if got == item.expected { exact += 1 }
+        total += item.expected.count
+        correct += zip(got, item.expected).reduce(0) { $0 + ($1.0 == $1.1 ? 1 : 0) }
+      }
+      let ms = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000.0
+      print(String(
+        format: "│ %@  整句 %.2f%%   逐字 %.2f%%   %.0f ms",
+        label.padding(toLength: 30, withPad: " ", startingAt: 0),
+        Double(exact) / Double(cases.count) * 100,
+        Double(correct) / Double(total) * 100, ms
+      ))
+    }
+
+    print("\n┌─ 組態掃描（\(cases.count) 條案例）───────────────────────────────")
+    run("關閉重排", nil)
+    for (width, minCtx) in [(1, 1), (4, 1), (4, 0), (8, 0)] {
+      run("beam=\(width) minLeftCtx=\(minCtx)", SentenceReranker(
+        reranker: CharLMReranker(model: model, minimumLeftContext: minCtx),
+        configuration: .init(beamWidth: width)
+      ))
+    }
+    print("└──────────────────────────────────────────────────────────────")
+  }
+
+  /// 量測：重排器實際拿得到多長的左文？窗口拉到超過這個分佈就是浪費。
+  @Test("[量測] 左文長度分佈")
+  func test608_LeftContextLengthDistribution() throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let corpusPath = environment["VCHEWING_RERANK_CORPUS"] else { return }
+    let limit = environment["VCHEWING_RERANK_LIMIT"].flatMap(Int.init) ?? 500
+    let factoryPath = try #require(LMMgr.getCoreDictionaryDBPath(factory: true))
+    defer {
+      _ = LMAssembly.LMInstantiator.connectToTestFactoryDictionary(
+        textMapData: LMATestsData.textMapTestCoreLMData
+      )
+      testLM.contextualReranker = nil
+    }
+    LMAssembly.LMInstantiator.connectFactoryDictionary(textMapPath: factoryPath)
+    testHandler.currentLM.syncPrefs()
+
+    /// 只記錄左文長度，分數原樣回傳（等同 NoOp，不改變任何結果）。
+    final class LengthRecorder: CandidateReranker, @unchecked Sendable {
+      var lengths = [Int]()
+      func rescore(_ candidates: [RerankCandidate], leftContext: String) -> [Double] {
+        lengths.append(leftContext.count)
+        return candidates.map(\.priorScore)
+      }
+    }
+
+    let lexicon = try LexiconReadings(txtMapPath: factoryPath)
+    let cases = try lexicon.makeCases(corpusPath: corpusPath, limit: limit)
+    let recorder = LengthRecorder()
+    // maxContextCharacters 開到 20（組字區上限），才量得到真實可用長度。
+    testLM.contextualReranker = SentenceReranker(
+      reranker: recorder,
+      configuration: .init(beamWidth: 1, maxContextCharacters: 20)
+    )
+
+    let assembler = testHandler.assembler
+    for item in cases {
+      assembler.clear()
+      var ok = true
+      for r in item.readings where ok {
+        if (try? assembler.insertKey(r)) == nil { ok = false }
+      }
+      guard ok else { continue }
+      _ = assembler.assemble()
+      testLM.contextualReranker?.apply(to: assembler)
+    }
+
+    let lengths = recorder.lengths.sorted()
+    guard !lengths.isEmpty else { return }
+    func share(atLeast n: Int) -> Double {
+      Double(lengths.filter { $0 >= n }.count) / Double(lengths.count) * 100
+    }
+    print("\n┌─ 左文長度分佈（\(lengths.count) 次評分呼叫）──────────────")
+    for n in [1, 2, 4, 6, 8, 12, 16, 20] {
+      let pct = share(atLeast: n)
+      let bar = String(repeating: "█", count: Int(pct / 2.5))
+      print(String(format: "│ ≥%2d 字   %5.1f%%  %@", n, pct, bar))
+    }
+    print("│")
+    print("│ 中位數 \(lengths[lengths.count / 2]) 字、最長 \(lengths.last!) 字")
+    print("└──────────────────────────────────────────────")
+  }
+
   // MARK: - 內部
 
   fileprivate func runCorpus(
@@ -312,9 +512,16 @@ struct LexiconReadings {
   let maxWordLength: Int
   let wordToReading: [String: String]
 
+  /// 片段長度上限。預設 12；`compositorWidthLimit` 是 20，量測左文分佈時應放寬到 20，
+  /// 否則量到的會是生成器的截斷長度而不是真實可用長度。
+  static var maximumRunLength: Int {
+    ProcessInfo.processInfo.environment["VCHEWING_RERANK_MAXRUN"].flatMap(Int.init) ?? 12
+  }
+
   /// 對語料做最長匹配切詞，生成 `(讀音序列, 正解)` 案例。
   ///
-  /// 只取 4–12 字的純漢字連續片段：太短沒有上下文可言，太長會撞到組字區的寬度上限。
+  /// 只取純漢字連續片段，長度介於 4 與 `maximumRunLength` 之間：
+  /// 太短沒有上下文可言，太長會撞到組字區的寬度上限（`compositorWidthLimit` = 20）。
   func makeCases(corpusPath: String, limit: Int) throws -> [(readings: [String], expected: String)] {
     // 不用 `try?` 吞掉錯誤：相對路徑在測試行程裡多半解析不到（工作目錄不是倉庫根），
     // 靜默回傳空陣列只會讓人誤以為「語料不合格」。
@@ -333,7 +540,7 @@ struct LexiconReadings {
           continue
         }
         defer { run.removeAll(keepingCapacity: true) }
-        guard (4 ... 12).contains(run.count) else { continue }
+        guard (4 ... Self.maximumRunLength).contains(run.count) else { continue }
         guard let segmented = segment(run), segmented.count >= 2 else { continue }
         result.append((segmented, String(run)))
         if result.count >= limit { return result }
