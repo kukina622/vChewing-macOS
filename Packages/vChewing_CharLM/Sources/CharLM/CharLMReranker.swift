@@ -31,8 +31,10 @@ public struct CharLMReranker: CandidateReranker {
     lambdaLM: Double = CharLMReranker.defaultLambdaLM,
     lambdaPOM: Double = CharLMReranker.defaultLambdaPOM,
     minimumLeftContext: Int = CharLMReranker.defaultMinimumLeftContext,
-    normalization: CharLM.Normalization = .acrossCandidates
+    normalization: CharLM.Normalization = .acrossCandidates,
+    globallyNormalized: Bool = true
   ) {
+    self.globallyNormalized = globallyNormalized
     self.model = model
     self.lambdaLM = lambdaLM
     self.lambdaPOM = lambdaPOM
@@ -80,6 +82,20 @@ public struct CharLMReranker: CandidateReranker {
   /// 若日後發現只有 1 個字的左文也一樣弱，把這個值調到 2 即可。
   public let minimumLeftContext: Int
 
+  /// LM 分數是否以**全詞彙表**做正規化。
+  ///
+  /// 只在候選集內正規化的話，分數回答的是「給定上下文，哪個候選比較好」——
+  /// 那是相對量，反映不出「這個上下文本身有多合理」。Beam 要比較的是整條路徑，
+  /// 而路徑之間的差別正是前面選了什麼字（也就是後面節點的上下文），
+  /// 於是局部正規化會讓模型偏好「使局部決策容易」的上下文，而非「比較可能」的。
+  ///
+  /// 這就是 MEMM 的 label bias。實例：`ㄉㄨㄟˋ-ㄑㄧˊ-ㄊㄚ-ㄉㄜ˙` 被改寫成
+  /// 「兌其他的」——節點 2 只有「其他／其它」兩個候選，若「兌」讓這兩者更容易
+  /// 區分，路徑就白賺分數，與「對」和「兌」哪個比較可能完全無關。
+  ///
+  /// 代價是每個隱藏狀態要多掃一次全詞彙表（實測 30µs）。
+  public let globallyNormalized: Bool
+
   public let model: CharLM
   public let lambdaLM: Double
   public let lambdaPOM: Double
@@ -126,29 +142,43 @@ public struct CharLMReranker: CandidateReranker {
       }
     }
 
-    let isAllSingleCharacter = candidates.allSatisfy { $0.value.count == 1 }
-    let contextScores: [Double] = isAllSingleCharacter
-      ? singleCharacterScores(candidates, leftContext: leftContext)
-      : model.logProbabilities(
-        of: candidates.map(\.value),
-        following: leftContext,
-        normalization: normalization
-      ).map(Double.init)
-
-    // 在**候選集內**正規化，而非掃全詞彙表。
-    //
-    // 單一節點內比大小時，減掉一個共同常數不影響排序——所以貪婪路徑的結果
-    // 與正規化前完全相同。但 beam search 要把不同節點的分數加總，而不同假設
-    // 的左文不同、隱含的分母也不同，不正規化就加不得。
-    //
-    // 之所以不用全詞彙表的 `logSumExp`：那是每次 30µs 的全表掃描，而受限解碼
-    // 本來就只在候選集內做決策，對候選集正規化才是正確的機率解釋。
-    let normalizer = Self.logSumExp(contextScores)
+    let contextScores = languageModelScores(candidates, leftContext: leftContext)
     return zip(candidates, contextScores).map { candidate, contextScore in
       candidate.priorScore
-        + lambdaLM * (contextScore - normalizer)
+        + lambdaLM * contextScore
         + lambdaPOM * candidate.pomScore * Double(candidate.value.count)
     }
+  }
+
+  // MARK: Private
+
+  /// 各候選的 LM 分數，已正規化成跨節點可加總的量。
+  private func languageModelScores(
+    _ candidates: [RerankCandidate],
+    leftContext: String
+  )
+    -> [Double] {
+    if candidates.allSatisfy({ $0.value.count == 1 }) {
+      // 單字快路徑：隱藏層只算一次，候選各做一次點積。
+      let hidden = model.hiddenState(context: model.context(from: leftContext))
+      let raw = candidates.map { candidate -> Double in
+        guard let character = candidate.value.first else { return 0 }
+        return Double(model.logit(hidden: hidden, token: model.tokenID(for: character)))
+      }
+      // 全域正規化才掃全詞彙表（30µs）；否則退回便宜但有 label bias 的候選集內正規化。
+      let normalizer = globallyNormalized
+        ? Double(model.logSumExp(hidden: hidden))
+        : Self.logSumExp(raw)
+      return raw.map { $0 - normalizer }
+    }
+
+    // 多字候選是**多個位置**的加總，不能只減一個位置的分母。
+    // `.perPosition` 本身就是逐位置對全詞彙表正規化，正是這裡需要的。
+    let mode: CharLM.Normalization = globallyNormalized ? .perPosition : normalization
+    let raw = model.logProbabilities(
+      of: candidates.map(\.value), following: leftContext, normalization: mode
+    ).map(Double.init)
+    return globallyNormalized ? raw : raw.map { $0 - Self.logSumExp(raw) }
   }
 
   /// 數值穩定的 log-sum-exp（先減去最大值再取 exp，避免溢位）。
@@ -160,25 +190,4 @@ public struct CharLMReranker: CandidateReranker {
 
   // MARK: Private
 
-  /// 全部都是單字候選時的快路徑。
-  ///
-  /// 這些候選共用同一組上下文，log-softmax 的分母是共同常數、比大小時會消掉，
-  /// 因此可以跳過掃描整個詞彙表的 `logSumExp`——這正是設計文件 §4.3 所述
-  /// 「候選集限定輸出」的加速來源，也是本模型能待在每次按鍵熱路徑上的關鍵。
-  /// 實測：13.1 µs／節點（12 個候選），相對於走分母的 251 µs。
-  ///
-  /// 得到的是未正規化的 logit。由於缺的是一個對所有候選都相同的常數，
-  /// 融合之後的**排序**與用正規化分數完全一致。
-  private func singleCharacterScores(
-    _ candidates: [RerankCandidate],
-    leftContext: String
-  )
-    -> [Double] {
-    let context = model.context(from: leftContext)
-    let hidden = model.hiddenState(context: context)
-    return candidates.map { candidate in
-      guard let character = candidate.value.first else { return 0 }
-      return Double(model.logit(hidden: hidden, token: model.tokenID(for: character)))
-    }
-  }
 }
