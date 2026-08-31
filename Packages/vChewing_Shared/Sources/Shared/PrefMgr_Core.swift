@@ -156,6 +156,15 @@ public final class PrefMgr: PrefMgrProtocol, Sendable {
   @AppProperty(userDef: .kFetchSuggestionsFromPerceptionOverrideModel)
   public var fetchSuggestionsFromPerceptionOverrideModel: Bool
 
+  /// 是否以上下文模型重排組字區的同音詞候選。
+  ///
+  /// 目前是隱藏旗標（無設定介面），**預設開啟**。詳見 `DevLab/AICandidateSelection_Design.md` §4。
+  ///
+  /// ⚠️ 改動這個預設值只對「還沒寫過這個鍵」的使用者有效。`AppProperty.init` 會在首次
+  /// 存取時就把預設值寫進 `UserDefaults`，此後 getter 讀到的永遠是那個已存的值。
+  @AppProperty(userDef: .kApplyContextualCandidateReranking)
+  public var applyContextualCandidateReranking: Bool
+
   @AppProperty(userDef: .kReducePOMLifetimeToNoMoreThan12Hours)
   public var reducePOMLifetimeToNoMoreThan12Hours: Bool
 

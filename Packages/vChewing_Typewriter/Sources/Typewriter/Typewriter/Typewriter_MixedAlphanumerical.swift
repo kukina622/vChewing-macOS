@@ -385,6 +385,7 @@ public struct MixedAlphanumericalTypewriter<Handler: InputHandlerProtocol>: Type
 
               let textToCommit = handler.commitOverflownComposition
               handler.retrievePOMSuggestions(apply: true)
+              handler.applyContextualReranking()
               handler.composer.clear()
               handler.mixedAlphanumericalBuffer.removeAll()
 
@@ -759,6 +760,7 @@ public struct MixedAlphanumericalTypewriter<Handler: InputHandlerProtocol>: Type
     let prefixText = selectedCandidate.prefixText
     let overflowText = handler.commitOverflownComposition
     handler.retrievePOMSuggestions(apply: true)
+    handler.applyContextualReranking()
     handler.composer.clear()
     handler.mixedAlphanumericalBuffer.removeAll()
 

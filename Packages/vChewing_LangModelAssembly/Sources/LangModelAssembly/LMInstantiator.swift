@@ -8,6 +8,7 @@
 
 import Foundation
 import Homa
+import HomaReranker
 import Shared
 import SwiftExtension
 import TrieKit
@@ -44,6 +45,13 @@ extension LMAssembly {
     }
 
     // MARK: Public
+
+    /// 上下文候選重排器。由外層（`LMMgr`）依語文模式注入，未注入時整個功能保持沉默。
+    ///
+    /// 之所以掛在這裡：本型別是專案的「語言模型匯流」，而重排器所提供的正是
+    /// 原廠詞庫缺少的那一塊——上下文機率（設計文件 §2 限制 ①）。
+    /// 它不走元圖管線，因此也繞開了 §2 限制 ② 的分數洩漏缺陷。
+    public var contextualReranker: SentenceReranker?
 
     public struct Config: Hashable {
       /// 如果設定為 nil 的話，則不產生任何詞頻資料。

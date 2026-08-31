@@ -51,6 +51,7 @@ public protocol PrefMgrProtocol {
   var allowRescoringSingleKanjiCandidates: Bool { get set }
   var enforceETenDOSCandidateSequence: Bool { get set }
   var fetchSuggestionsFromPerceptionOverrideModel: Bool { get set }
+  var applyContextualCandidateReranking: Bool { get set }
   var reducePOMLifetimeToNoMoreThan12Hours: Bool { get set }
   var useFixedCandidateOrderOnSelection: Bool { get set }
   var autoCorrectReadingCombination: Bool { get set }

@@ -262,6 +262,7 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
 
     let textToCommit = handler.commitOverflownComposition
     handler.retrievePOMSuggestions(apply: true)
+    handler.applyContextualReranking()
     handler.composer.replacePinyinBuffer(with: autoChop.remainingRomaji)
     narrateTheComposer(
       narrator: handler.narrator,
@@ -349,6 +350,7 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
     )
     let textToCommit = handler.commitOverflownComposition
     handler.retrievePOMSuggestions(apply: true)
+    handler.applyContextualReranking()
     handler.composer.clear()
 
     var inputting = handler.generateStateOfInputting()
@@ -511,6 +513,7 @@ extension BPMFFullMatchTypewriter {
     case .success:
       handler.invalidateFuriousTrail() // 聲調覆寫為使用者顯式干涉：狂拼 trail 失效。
       handler.retrievePOMSuggestions(apply: true)
+      handler.applyContextualReranking()
       let textToCommit = handler.commitOverflownComposition
       let targetIndex = handler.assembler.cursor - 1
       if handler.assembler.actualKeys.indices.contains(targetIndex) {

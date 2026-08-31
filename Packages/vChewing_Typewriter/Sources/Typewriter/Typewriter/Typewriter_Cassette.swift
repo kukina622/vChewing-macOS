@@ -270,6 +270,7 @@ public struct CassetteTypewriter<Handler: InputHandlerProtocol>: TypewriterProto
 
     let textToCommit = handler.commitOverflownComposition
     handler.retrievePOMSuggestions(apply: true)
+    handler.applyContextualReranking()
     handler.calligrapher.removeAll()
 
     var inputting = handler.generateStateOfInputting()

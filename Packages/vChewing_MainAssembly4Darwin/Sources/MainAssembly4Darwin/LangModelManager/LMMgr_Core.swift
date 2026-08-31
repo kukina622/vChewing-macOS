@@ -23,6 +23,16 @@ extension Shared.InputMode {
         isCHS: false,
         pomDataURL: LMMgr.perceptionOverrideModelDataURL(.imeModeCHT)
       )
+      // 注入上下文重排器。模型缺失時為 nil，該模式的重排功能自動保持沉默。
+      // 目前僅備有繁體模型（設計文件 §4.6：先做繁體，管線走通再補簡體）。
+      //
+      // 偏好關閉時完全不載入，免得白付約 11ms 的載入時間與約 6.5MB 的常駐記憶體。
+      // 代價是切換該偏好之後需要 `resetLangModelCache()` 才會生效——
+      // 這對一個尚未曝露於設定介面的隱藏旗標而言是可接受的。
+      if PrefMgr.shared.applyContextualCandidateReranking {
+        chs.contextualReranker = CharLMRerankerMgr.reranker(for: .imeModeCHS)
+        cht.contextualReranker = CharLMRerankerMgr.reranker(for: .imeModeCHT)
+      }
     }
 
     // MARK: Internal
