@@ -123,6 +123,60 @@ struct TekkonTestsPinyin {
     #expect(!composer.isPronounceable)
   }
 
+  // MARK: - 狂拼模式（Furious Typing Mode）基礎：PinyinTrie.zhuyinReadings
+
+  /// 完整音節：僅回傳該音節對應的注音，不做前綴展開（即使該音節是其他音節的字串前綴）。
+  @Test("[Tekkon] PinyinTrie_zhuyinReadings_ExactCompleteSyllable")
+  func testPinyinTrieZhuyinReadingsExactCompleteSyllable() async throws {
+    // 漢語拼音：
+    do {
+      let trie = Tekkon.PinyinTrie(parser: .ofHanyuPinyin)
+      #expect(trie.zhuyinReadings(forPinyinFragment: "shi") == ["ㄕ"])
+      #expect(trie.zhuyinReadings(forPinyinFragment: "ni") == ["ㄋㄧ"])
+      // "nan" 同時是 "nang" 的字串前綴；精確匹配時不展開後者。
+      #expect(trie.zhuyinReadings(forPinyinFragment: "nan") == ["ㄋㄢ"])
+    }
+    // 國音二式：
+    do {
+      let trie = Tekkon.PinyinTrie(parser: .ofSecondaryPinyin)
+      #expect(trie.zhuyinReadings(forPinyinFragment: "chiung") == ["ㄑㄩㄥ"])
+    }
+  }
+
+  /// 不完整前綴：回傳所有以該輸入為前綴的音節所對應的注音，去重且排序穩定。
+  @Test("[Tekkon] PinyinTrie_zhuyinReadings_IncompletePrefixExpansion")
+  func testPinyinTrieZhuyinReadingsIncompletePrefixExpansion() async throws {
+    let trie = Tekkon.PinyinTrie(parser: .ofHanyuPinyin)
+
+    // "z" 同時是 z- 與 zh- 兩系音節的字串前綴：兩種聲母的注音都應涵蓋。
+    let zReadings = trie.zhuyinReadings(forPinyinFragment: "z")
+    #expect(!zReadings.isEmpty)
+    #expect(Set(zReadings).count == zReadings.count) // 去重。
+    #expect(zReadings == zReadings.sorted()) // 排序穩定（Unicode 字典序）。
+    #expect(zReadings.contains("ㄗ"))
+    #expect(zReadings.contains("ㄓ"))
+
+    // "zh" 前綴只涵蓋 zh- 系。
+    let zhReadings = trie.zhuyinReadings(forPinyinFragment: "zh")
+    #expect(!zhReadings.isEmpty)
+    #expect(zhReadings == zhReadings.sorted())
+    #expect(zhReadings.contains("ㄓ"))
+    #expect(!zhReadings.contains("ㄗ"))
+    // 確定性：重複呼叫輸出一致。
+    #expect(zhReadings == trie.zhuyinReadings(forPinyinFragment: "zh"))
+  }
+
+  /// 邊界案例：空字串、非拼音排列、不可能的前綴。
+  @Test("[Tekkon] PinyinTrie_zhuyinReadings_EdgeCases")
+  func testPinyinTrieZhuyinReadingsEdgeCases() async throws {
+    // 空字串：回傳空陣列。
+    #expect(Tekkon.PinyinTrie(parser: .ofHanyuPinyin).zhuyinReadings(forPinyinFragment: "") == [])
+    // 非拼音排列（大千注音）：直接回傳空陣列。
+    #expect(Tekkon.PinyinTrie(parser: .ofDachen).zhuyinReadings(forPinyinFragment: "z") == [])
+    // 不可能的前綴：無任何音節以之開頭。
+    #expect(Tekkon.PinyinTrie(parser: .ofHanyuPinyin).zhuyinReadings(forPinyinFragment: "xw") == [])
+  }
+
   @Test("[Tekkon] Composer_InputAndComposition_YalePinyin")
   func testYalePinyinKeyReceivingAndCompositions() async throws {
     var composer = Tekkon.Composer(arrange: .ofYalePinyin)
@@ -317,5 +371,33 @@ struct TekkonTestsPinyin {
     composer.receiveKey(fromString: "3") // 上聲
     toneMarkerIndicator = composer.hasIntonation(withNothingElse: true)
     #expect(toneMarkerIndicator)
+  }
+
+  /// BackSpace 清空拼音緩衝後，聲介韻槽位須同步清空（不得殘留已刪除的讀音）——
+  /// 否則 isPronounceable 誤判為真，後續的聲調鍵／空格鍵會把已刪除的讀音重新組回
+  /// （狂拼模式「BackSpace 後按空格」的輪替／重組錯亂由此而來）。
+  @Test("[Tekkon] Composer_BackSpaceResyncsPhonabetSlots_Pinyin")
+  func testBackSpaceResyncsPhonabetSlotsInPinyinMode() async throws {
+    var composer = Tekkon.Composer(arrange: .ofHanyuPinyin)
+
+    // 輸入完整音節「ma」。
+    composer.receiveKey(fromString: "m")
+    composer.receiveKey(fromString: "a")
+    #expect(composer.romajiBuffer == "ma")
+    #expect(composer.isPronounceable)
+
+    // 兩次 BackSpace 清空緩衝：聲介韻槽位須同步清空。
+    composer.doBackSpace()
+    #expect(composer.romajiBuffer == "m")
+    composer.doBackSpace()
+    #expect(composer.romajiBuffer.isEmpty)
+    #expect(composer.isEmpty)
+    #expect(!composer.isPronounceable)
+
+    // 清空後收下陰平空格鍵：不應把已刪除的「ma」重新組回。
+    composer.receiveKey(fromString: " ") // 陰平
+    #expect(composer.intonation.value == " ")
+    #expect(composer.getComposition() == "")
+    #expect(!composer.isPronounceable)
   }
 }

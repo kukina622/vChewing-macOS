@@ -17,13 +17,45 @@ extension InputHandlerProtocol {
     var state: State { session.state }
     currentLM.syncPrefs()
 
+    // 狂拼固化：前方候選窗顯示中、按下「可能叫出選字窗」的鍵（Space／翻頁／候選導航
+    // 方向鍵）時，先把前方投機讀音固化進組字器（投機→實體：只插聲調桶、不覆寫，
+    // trail 累積供重切分），再讓同一事件繼續走正常流程——正常流程自動開出正常選字窗
+    // （方向鍵、翻頁、revlookup 皆由既有機制免費提供）。不重入、無遞迴風險；
+    // Enter／數字鍵／字母鍵／編輯鍵不屬觸發集合。
+    // 前後方向鍵不在此列——注拼槽有未完成讀音時由 handleForward/handleBackward
+    // 的專屬規則接管（狂拼開窗或 error 退回）。
+    // 空格觸發固化時記錄本拍「空格已用於插入讀音」：後續的 kSpace 分診依此直接
+    // 消費本拍空格（不再輪替、不再遞交、不生成空格字符）——未完成讀音存在時，
+    // 空格語義為「把讀音插入組字器」而非「輪替候選」。
+    // 固化後注拼槽仍有未完成讀音（α 查無候選、或固化失敗）時，直接消費本拍空格、
+    // 以新狀態刷新——避免空格流入注拼槽（拼音模式下空格＝中性聲調，其後的獨立聲調
+    // 處理會清空注拼槽、丟失前方的簡拼整詞上下文）。
+    var spaceSolidifiedFuriousReading = false
+    if session.isFuriousCopilotCandidateWindowVisible,
+       !input.isHoldingAny([.control, .option, .command]),
+       input.isSpace || input.isPageUp || input.isPageDown
+       || input.isCursorClockLeft || input.isCursorClockRight {
+      solidifyFuriousFrontReading()
+      if input.isSpace, hasFuriousFrontPending {
+        session.switchState(generateStateOfInputting())
+        return true
+      }
+      spaceSolidifiedFuriousReading = input.isSpace
+    }
+
     // MARK: - 按鍵碼分診（Triage by KeyCode）
 
     func triageByKeyCode() -> Bool? {
       guard let keyCodeType = KeyCode(rawValue: input.keyCode) else { return nil }
       switch keyCodeType {
       case .kEscape: return handleEsc()
-      case .kContextMenu, .kTab: return revolveCandidate(
+      case .kContextMenu, .kTab:
+        if input.isTab, hasFuriousFrontPending {
+          // 狂拼前方：Tab 先固化前方讀音（如 Enter 般、只插聲調桶不覆寫），
+          // 再讓本事件續走正常流程——注拼槽清空後 revolveCandidate 即可就地輪替。
+          solidifyFuriousFrontReading()
+        }
+        return revolveCandidate(
           reverseOrder: input.isShiftHeld,
           softRevolve: prefs.preferredRevolverForceLevel == 2
         )
@@ -54,12 +86,12 @@ extension InputHandlerProtocol {
       case .kWindowsDelete: return handleDelete(input: input)
       case .kCarriageReturn, .kLineFeed:
         let frontNode = assembler.assembledSentence.last
-        return handleEnter(input: input) {
-          guard self.currentTypingMethod == .vChewingFactory else { return [] }
+        let shouldEarlyBreak: Bool = currentTypingMethod != .vChewingFactory
+        return handleEnter(input: input) { [currentLM = currentLM] in
+          guard !shouldEarlyBreak else { return [] }
           guard let frontNode = frontNode else { return [] }
           let pair = KeyValuePaired(keyArray: frontNode.keyArray, value: frontNode.value)
-          let associates = self.generateArrayOfAssociates(withPair: pair)
-          return associates
+          return currentLM.lookupHub.associatedCandidates(forPair: pair)
         }
       case .kSymbolMenuPhysicalKeyIntl, .kSymbolMenuPhysicalKeyJIS:
         let isJIS = keyCodeType == .kSymbolMenuPhysicalKeyJIS
@@ -82,10 +114,23 @@ extension InputHandlerProtocol {
             return true
           }
         case .ofInputting:
+          // 空格已用於狂拼讀音固化：本拍空格被「插入讀音」消費——不再輪替候選、
+          // 亦不落入後續的空格遞交路徑（否則會生成空格字符拆斷組字區、使之直接
+          // 遞交）。behavior==1 的「空格呼叫選字窗」由更早的 callCandidateState
+          // 提供、不受本守衛影響；此處以新狀態刷新顯示（清掉已失效的狂拼前方預覽窗）。
+          if spaceSolidifiedFuriousReading {
+            session.switchState(generateStateOfInputting())
+            return true
+          }
+          // 空格輪替守衛：注拼槽尚有未完成讀音時，停用空格輪替——未完成讀音存在時，
+          // 空格語義為「把讀音插入組字器」、不兼任候選輪替。
+          // （拼音模式下 composer.isEmpty 涵蓋 romajiBuffer；注音模式涵蓋聲介韻調。）
+          let spaceRotationBanned = !composer.isEmpty
           // 臉書等網站會攔截 Tab 鍵，所以用 Shift+Command+Space 對候選字詞做正向/反向輪替。
           // Space 鍵就地輪替候選字（對應 spaceKeyBehaviorAgainstICB == 2）。
           if prefs.spaceKeyBehaviorAgainstICB == 2,
-             input.keyModifierFlags.intersection([.control, .command, .option]).isEmpty {
+             input.keyModifierFlags.intersection([.control, .command, .option]).isEmpty,
+             !spaceRotationBanned {
             // 此時 Shift+Space 反向輪替，仿 Shift+Tab 行為。
             // SPACE 啟動的輪替一律套用 soft revolve，避免毀掉鄰近已覆寫節點。
             return revolveCandidate(
@@ -93,7 +138,7 @@ extension InputHandlerProtocol {
               softRevolve: prefs.preferredRevolverForceLevel != 0
             )
           }
-          if input.isShiftHeld, !input.isHoldingAny([.control, .option]) {
+          if input.isShiftHeld, !input.isHoldingAny([.control, .option]), !spaceRotationBanned {
             return revolveCandidate(
               reverseOrder: input.isCommandHeld,
               softRevolve: prefs.preferredRevolverForceLevel != 0

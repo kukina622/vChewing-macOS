@@ -11,7 +11,9 @@ extension Homa.Assembler {
   /// - Returns: 組句結果（已選字詞陣列）。
   @discardableResult
   public func assemble() -> [Homa.GramInPath] {
-    let result = Homa.PathFinder.run(config: &config)
+    var finalScore = Double(Int32.min)
+    let result = Homa.PathFinder.run(config: &config, finalScore: &finalScore)
+    mostRecentPathScore = finalScore
     assembledSentence = result
     return assembledSentence
   }
@@ -27,13 +29,18 @@ extension Homa {
     ///
     /// 該演算法使用動態規劃在有向無環圖中尋找具有最高分數的路徑，即最可能的字詞組合。
     /// DAG 演算法相對簡潔，記憶體使用量較少。
-    /// - Parameter config: 組字器組態（inout，因為 DP 遍歷時 `getScore(previous:)` 的自動覆寫
-    ///   副作用需要就地寫回節點狀態——節點為 Struct，無法再靠引用穿透值拷貝）。
+    /// - Parameters:
+    ///   - config: 組字器組態（inout，因為 DP 遍歷時 `getScore(previous:)` 的自動覆寫
+    ///     副作用需要就地寫回節點狀態——節點為 Struct，無法再靠引用穿透值拷貝）。
+    ///   - finalScore: 寫出本次 DP 的整句最佳路徑總分（不可達時為 `Double(Int32.min)`）。
     /// - Returns: 組句結果（已選字詞陣列）。
     @discardableResult
-    static func run(config: inout Homa.Config) -> [Homa.GramInPath] {
+    static func run(config: inout Homa.Config, finalScore: inout Double) -> [Homa.GramInPath] {
       var newAssembledSentence = [Homa.GramInPath]()
-      guard !config.segments.isEmpty else { return newAssembledSentence }
+      guard !config.segments.isEmpty else {
+        finalScore = Double(Int32.min)
+        return newAssembledSentence
+      }
 
       let keyCount = config.keys.count
 
@@ -65,8 +72,16 @@ extension Homa {
 
           // 計算新的權重分數，考慮前一個字詞的影響
           let previousCurrent = parent[i]?.gram?.current ?? ""
+          // 三元圖前驅之二：沿最佳路徑往回看「前驅節點起點」之前的節點值
+          // （與既有 bigram「最佳路徑前驅」近似一致；1D DP 結構零改動）。
+          let anteriorCurrent: String = {
+            guard let parentInfo = parent[i], parentInfo.segLength > 0 else { return "" }
+            let previousStart = i - parentInfo.segLength
+            guard previousStart >= 0 else { return "" }
+            return parent[previousStart]?.gram?.current ?? ""
+          }()
           var nodeCopy = nextNode
-          let newScore = dp[i] + nodeCopy.getScore(previous: previousCurrent)
+          let newScore = dp[i] + nodeCopy.getScore(previous: previousCurrent, anterior: anteriorCurrent)
           visitedNodes.append((i, length, nodeCopy))
 
           // 如果找到更好的路徑，更新 dp 和 parent
@@ -99,6 +114,7 @@ extension Homa {
         currentPos -= parentInfo.segLength
       }
 
+      finalScore = dp[keyCount]
       if !resultReversed.isEmpty {
         newAssembledSentence = resultReversed.reversed()
       }

@@ -80,7 +80,6 @@
 		5BDB7A3128D47587001AC277 /* vChewing_FolderMonitor */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = vChewing_FolderMonitor; path = Packages/vChewing_FolderMonitor; sourceTree = "<group>"; };
 		5BDB7A3228D47587001AC277 /* vChewing_Hotenka */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = vChewing_Hotenka; path = Packages/vChewing_Hotenka; sourceTree = "<group>"; };
 		5BDB7A3428D47587001AC277 /* vChewing_ModifierKeyHitChecker */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = vChewing_ModifierKeyHitChecker; path = Packages/vChewing_ModifierKeyHitChecker; sourceTree = "<group>"; };
-		5BDB7A3528D47587001AC277 /* RMJay_LineReader */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = RMJay_LineReader; path = Packages/RMJay_LineReader; sourceTree = "<group>"; };
 		5BDB7A3628D47587001AC277 /* vChewing_Tekkon */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = vChewing_Tekkon; path = Packages/vChewing_Tekkon; sourceTree = "<group>"; };
 		5BE2E7652F951AC60072E5DB /* vChewing_Homa */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = vChewing_Homa; path = Packages/vChewing_Homa; sourceTree = "<group>"; };
 		5BE8A8C4281EE65300197741 /* CONTRIBUTING.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CONTRIBUTING.md; sourceTree = "<group>"; };
@@ -199,7 +198,6 @@
 				5B5CE5FF2F8D539700E767A0 /* ButKo_BPMFVS */,
 				5BAD67E12ADAB62D005A4842 /* HangarRash_SwiftyCapsLockToggler */,
 				5BDB7A3028D47587001AC277 /* Jad_BookmarkManager */,
-				5BDB7A3528D47587001AC277 /* RMJay_LineReader */,
 				5B6CA6272B8A1C9200A85050 /* vChewing_BrailleSputnik */,
 				5BA8C30128DEFE4F004C5CC4 /* vChewing_CandidateWindow */,
 				5BDB7A3128D47587001AC277 /* vChewing_FolderMonitor */,
@@ -490,7 +488,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4610;
+				CURRENT_PROJECT_VERSION = 4710;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
@@ -514,7 +512,7 @@
 					/usr/lib/swift,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 4.6.1;
+				MARKETING_VERSION = 4.7.1;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = org.atelierInmu.vChewing.vChewingDebuggable;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -535,7 +533,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4610;
+				CURRENT_PROJECT_VERSION = 4710;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
@@ -553,7 +551,7 @@
 					/usr/lib/swift,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 4.6.1;
+				MARKETING_VERSION = 4.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = org.atelierInmu.vChewing.vChewingDebuggable;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -678,7 +676,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4610;
+				CURRENT_PROJECT_VERSION = 4710;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
@@ -721,7 +719,7 @@
 					/usr/lib/swift,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 4.6.1;
+				MARKETING_VERSION = 4.7.1;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = org.atelierInmu.inputmethod.vChewing;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -750,7 +748,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4610;
+				CURRENT_PROJECT_VERSION = 4710;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
@@ -787,7 +785,7 @@
 					/usr/lib/swift,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 4.6.1;
+				MARKETING_VERSION = 4.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = org.atelierInmu.inputmethod.vChewing;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -810,7 +808,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4610;
+				CURRENT_PROJECT_VERSION = 4710;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -833,7 +831,7 @@
 					/usr/lib/swift,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 4.6.1;
+				MARKETING_VERSION = 4.7.1;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = org.atelierInmu.vChewing.vChewingInstaller;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -857,7 +855,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4610;
+				CURRENT_PROJECT_VERSION = 4710;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -874,7 +872,7 @@
 					/usr/lib/swift,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 4.6.1;
+				MARKETING_VERSION = 4.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = org.atelierInmu.vChewing.vChewingInstaller;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

@@ -53,7 +53,15 @@ extension ChineseConverter {
   }
 
   public static func cnvTradToKangXi(_ strObj: String) -> String {
-    hotenkaSingleton?.convert(strObj, to: .zhHantKX) ?? strObj
+    // 步天歌的康熙字典存有「一對多」的轉換情形：單字「才／參／核」各具多個義項，字典卻
+    // 無條件取單一義項（才→纔、參→蔘、核→覈），會抹掉源字的其他常見義項（如天才／
+    // 參加／核心）。此處先攔截「輸入內容僅為單字『才／參／核』」的情形：直接原樣返回、
+    // 不經過 Hotenka 資料庫查詢，以免繁體中文用戶在康熙模式下無法正常輸入這些字。
+    switch strObj {
+    case "核", "才", "參": return strObj
+    default: break
+    }
+    return hotenkaSingleton?.convert(strObj, to: .zhHantKX) ?? strObj
   }
 
   public static func cnvTradToJIS(_ strObj: String) -> String {
@@ -71,16 +79,14 @@ extension ChineseConverter {
         cassetteEnabled: PrefMgr.shared.cassetteEnabled,
         forceCassetteChineseConversion: PrefMgr.shared.forceCassetteChineseConversion,
         inputMode: IMEApp.currentInputMode,
-        chineseConversionEnabled: PrefMgr.shared.chineseConversionEnabled,
-        shiftJISShinjitaiOutputEnabled: PrefMgr.shared.shiftJISShinjitaiOutputEnabled
+        kanjiConversionPreferences: PrefMgr.shared.kanjiConversionPreferences
       )
     }
 
     var cassetteEnabled: Bool
     var forceCassetteChineseConversion: Int
     var inputMode: Shared.InputMode
-    var chineseConversionEnabled: Bool
-    var shiftJISShinjitaiOutputEnabled: Bool
+    var kanjiConversionPreferences: Int
   }
 
   /// 繁簡轉換結果的快取（keyed by 原始字串），僅供 kanjiConversionIfRequired 使用。
@@ -105,15 +111,10 @@ extension ChineseConverter {
     var text = text
     if PrefMgr.shared.cassetteEnabled { cassetteConvert(&text) }
     guard IMEApp.currentInputMode == .imeModeCHT else { return text }
-    switch (
-      PrefMgr.shared.chineseConversionEnabled,
-      PrefMgr.shared.shiftJISShinjitaiOutputEnabled
-    ) {
-    case (false, true): return Self.cnvTradToJIS(text)
-    case (true, false): return Self.cnvTradToKangXi(text)
-    // 本來這兩個開關不該同時開啟的，但萬一被同時開啟了的話就這樣處理：
-    case (true, true): return Self.cnvTradToJIS(text)
-    case (false, false): return text
+    switch PrefMgr.shared.kanjiConversionPreferences {
+    case 1: return Self.cnvTradToKangXi(text)
+    case 2: return Self.cnvTradToJIS(text)
+    default: return text
     }
   }
 }

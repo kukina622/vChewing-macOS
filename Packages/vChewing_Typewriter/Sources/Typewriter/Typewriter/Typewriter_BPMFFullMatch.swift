@@ -44,6 +44,38 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
         || input.isControlHeld || input.isOptionHeld || input.isShiftHeld || input.isCommandHeld
     let confirmCombination = input.isSpace || input.isEnter
 
+    // 狂拼模式：前方候選窗顯示時，Shift+選字鍵就地選字（仿磁帶快選的路由方式）。
+    // 僅當該鍵確為選字鍵（與 handleCandidate 的 checkSelectionKey 同語義）時才路由，
+    // 避免 Shift+方向鍵／Shift+字母誤入 handleCandidate 的取消選字分支、造成重 triage
+    // 無限遞迴（注拼槽未動、候選恆在，事件反覆回到路由器）。
+    let selectionKeyMatched = input.inputTextIgnoringModifiers.map {
+      session.selectionKeys.lowercased().contains($0.lowercased())
+    } ?? false
+    let furiousShiftCandidateSelection = input.isShiftHeld
+      && handler.hasFuriousFrontPending
+      && session.state.type == .ofInputting && !session.state.candidates.isEmpty
+      && selectionKeyMatched
+    if furiousShiftCandidateSelection,
+       handler.handleCandidate(input: input, ignoringModifiers: true) {
+      return true
+    }
+
+    // 狂拼模式：注拼槽尚有暫存拼音時，Enter 只固化前方讀音、停留在 Inputting 狀態
+    // 留待接下來的輸入，不直接遞交全部內容。copilot 窗可見
+    // 且使用者已高亮某候選時，固化該候選（等同就地選字、但不寫 POM——與 Enter 直遞
+    // 的 POM 政策一致）；否則以空格固化的語義只插聲調桶（保留重切分自由度）。
+    // 注拼槽清空後再次 Enter（hasFuriousFrontPending 不成立）才走正常遞交路徑。
+    if confirmCombination, input.isEnter, !input.isHoldingAny([.control, .option, .shift, .command]),
+       handler.hasFuriousFrontPending {
+      if let highlight = handler.furiousHighlightOverride {
+        handler.confirmFuriousFrontCandidate(highlight)
+      } else {
+        handler.solidifyFuriousFrontReading()
+      }
+      session.switchState(handler.generateStateOfInputting())
+      return true
+    }
+
     // 先嘗試讓注拼槽消化當前按鍵（含可能的聲調覆寫），以保留既有行為。
     let consumption = consumeReadingInputIfNeeded(
       input: input,
@@ -118,7 +150,7 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
     ) else {
       return [readingKey]
     }
-    return makeToneInsensitivePinyinQueryKey(from: readingKey)
+    return Tekkon.makeToneInsensitiveVariants(of: readingKey)
   }
 
   /// 判斷本次是否應將無調拼音改以聲調候選桶查詢。
@@ -136,21 +168,6 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
       && composer.isPinyinMode
       && composer.isPronounceable
       && existedIntonation.isEmpty
-  }
-
-  /// 將單一無調拼音讀音展開成同音節的聲調候選桶。
-  /// - Parameter readingKey: 不帶顯式聲調的單一讀音索引鍵。
-  /// - Returns: 該讀音的所有聲調變體陣列。
-  private func makeToneInsensitivePinyinQueryKey(from readingKey: String) -> [String] {
-    var toneVariants = [String]()
-    Tekkon.allowedIntonations.forEach { tone in
-      let intonationNow = (tone != " ") ? String(tone) : ""
-      let candidate = "\(readingKey)\(intonationNow)"
-      if !toneVariants.contains(candidate) {
-        toneVariants.append(candidate)
-      }
-    }
-    return toneVariants
   }
 
   private func consumeReadingInputIfNeeded(
@@ -201,11 +218,18 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
   )
     -> Bool? {
     guard let autoChop = handler.composer.pinyinAutoChopResult(appending: inputText) else {
+      // R3-a：完整音節自動 chop 不可行時，嘗試狂拼 α 自動套用——注拼槽整段為多音節
+      // 簡拼（如「ysxb」）且整詞簡拼查詢有明確勝出的頂級候選時，自動把其實際讀音
+      // 單鍵寫入組字器（本拍被消費、不再送入注拼槽）；模稜兩可時回傳 nil、維持
+      // 既有流程（按鍵送入注拼槽、copilot 窗繼續顯示候選）。
+      if handler.autoApplyFuriousAbbreviationIfClearWinner(appending: inputText) {
+        return true
+      }
       return nil
     }
 
     let choppedReadingKeys = autoChop.committedReadings.map {
-      makeToneInsensitivePinyinQueryKey(from: $0)
+      Tekkon.makeToneInsensitiveVariants(of: $0)
     }
     guard choppedReadingKeys.allSatisfy({ key in
       key.contains(where: { handler.currentLM.hasUnigramsForFast(keyArray: [$0]) })
@@ -219,6 +243,20 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
           "6C2CBEE8: Pinyin auto-chop generated an insertion key rejected by the assembler."
         )
         return true
+      }
+    }
+
+    // 狂拼模式：記錄本次自動 chop 提交的讀音鍵所對應的拼音字母 blob（trail）。
+    if handler.isFuriousTypingModeEffective {
+      let fullLetters = handler.composer.romajiBuffer + inputText
+      let consumedLetters = String(fullLetters.dropLast(autoChop.remainingRomaji.count))
+      let blobs = Array(
+        Tekkon.PinyinTrie.shared(parser: handler.composer.parser)
+          .chop(consumedLetters).prefix(autoChop.committedReadings.count)
+      )
+      // 重切段數與提交讀音數一致才記錄，避免 trail 與組字器鍵數脫鉤。
+      if blobs.count == autoChop.committedReadings.count {
+        handler.furiousTrail.append(contentsOf: blobs)
       }
     }
 
@@ -236,6 +274,8 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
     inputting.textToCommit = textToCommit
     session.switchState(inputting)
     handler.handleTypewriterSCPCTasks()
+    // 狂拼模式：語言模型引導的重切分（僅在 trail 達標時起作用）。
+    handler.resegmentFuriousTrailIfNeeded()
     return true
   }
 
@@ -291,7 +331,10 @@ public struct BPMFFullMatchTypewriter<Handler: InputHandlerProtocol>: Typewriter
     if input.isInvalid {
       errorCallback("22017F76: 不合規的按鍵輸入。")
       return true
-    } else if (try? handler.assembler.insertKey(readingKey)) == nil {
+    }
+    // 手動確認讀音為使用者顯式干涉：狂拼 trail 失效，避免重切動到已確認內容。
+    handler.invalidateFuriousTrail()
+    if (try? handler.assembler.insertKey(readingKey)) == nil {
       errorCallback(
         "3CF278C9-A: 得檢查對應的語言模組的 hasUnigramsFor() 是否有誤判之情形。"
       )
@@ -468,6 +511,7 @@ extension BPMFFullMatchTypewriter {
     }
     switch overrideRearKey(with: overrideRequest) {
     case .success:
+      handler.invalidateFuriousTrail() // 聲調覆寫為使用者顯式干涉：狂拼 trail 失效。
       handler.retrievePOMSuggestions(apply: true)
       handler.applyContextualReranking()
       let textToCommit = handler.commitOverflownComposition

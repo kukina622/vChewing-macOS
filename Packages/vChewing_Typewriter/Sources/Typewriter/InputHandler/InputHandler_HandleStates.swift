@@ -15,6 +15,294 @@ import Foundation
 extension InputHandlerProtocol {
   // MARK: - 構築狀態（State Building）
 
+  /// 狂拼模式（Furious Typing Mode）的前方即時預覽。
+  ///
+  /// 當注拼槽內留有尚未完成拼寫的拼音時，以組字器的副本（copilot）試算「把暫存拼音當作
+  /// 前方讀音」之後的組句結果，並取出前方對應的文字作為即時預覽。
+  /// 僅在狂拼模式啟用、且游標位於組字區最前端時生效；回傳 nil 表示維持拼音原文顯示。
+  /// - Remark: 該屬性為無狀態的暫態試算，不對原組字器造成任何變更。
+  var furiousTypingPreviewedReading: String? {
+    furiousFrontContext?.preview
+  }
+
+  /// 狂拼模式的前方上下文：閘門判定＋讀音桶生成＋copilot 前方預覽試算。
+  ///
+  /// 即時預覽（`furiousTypingPreviewedReading`）與前方候選清單
+  /// （`furiousTypingFrontCandidates`）共用同一份閘門與讀音桶，確保兩者行為一致。
+  /// 逐字選字模式（SCPC）啟用時狂拼完全無效，故在此一併設閘。
+  /// 若 copilot 組句的最後節點橫跨「最後提交鍵＋前方」邊界，一併回傳該節點的完整
+  /// 詞音配對（如「世界」[ㄕˋ,ㄐㄧㄝˋ]）；preedit 用的 preview 仍維持越界 suffix。
+  /// `assembledMainValues` 為 copilot 全句組句的主段範圍擷取（與前方 suffix 擷取互為
+  /// 鏡像），供 composition buffer 顯示與 Enter 遞交使用，確保顯示/遞交與 copilot
+  /// 最佳猜測（含邊界文脈）同源。
+  /// `tailReading` 為 copilot 組句當中最末節點對「前方位置」的具體選讀（含聲調），
+  /// 供前方候選清單與高亮預覽／顯式選字（Shift+選字鍵）路徑使用；空格固化不再以
+  /// 之釘選——只插聲調桶、不覆寫，保留 LM 重切分自由度。
+  /// - Returns: 含讀音桶、預覽文字、橫跨節點詞音配對、主段文字陣列與前方選讀的
+  ///   暫態結果；閘門不符或試算失敗時回傳 nil。
+  var furiousFrontContext: (
+    bucket: [String], preview: String, crossingPair: CandidateInState?,
+    assembledMainValues: [String], tailReading: String?
+  )? {
+    guard isFuriousTypingModeEffective else { return nil }
+    guard composer.intonation.isEmpty else { return nil }
+    let romaji = composer.romajiBuffer
+    guard !romaji.isEmpty else { return nil }
+    guard assembler.isCursorAtAssemblerEdge(direction: .front) else { return nil }
+    // 將暫存拼音展開為注音讀音桶（含聲調變體）。
+    let tonelessZhuyin = Tekkon.PinyinTrie.shared(parser: composer.parser)
+      .zhuyinReadings(forPinyinFragment: romaji)
+    let bucket = tonelessZhuyin.flatMap { zhuyin -> [String] in
+      Tekkon.allowedIntonations.map { tone in
+        zhuyin + ((tone != " ") ? String(tone) : "")
+      }
+    }
+    guard !bucket.isEmpty else { return nil }
+    // 以組字器副本（copilot）試算前方組句；不影響原組字器。
+    let mainLength = assembler.length
+    let copilot = assembler.copy
+    guard (try? copilot.insertKeys([bucket])) != nil else { return nil }
+    // 一次遍歷同時擷取主段範圍與越過主段長度的前方部分。
+    // 擷取紀律（與既有的「完全越界取全部、橫跨取越界部分」互為鏡像）：
+    // - 完全位於主段的節點：取全部文字（節點的 value 長度不一定等於讀音數）。
+    // - 完全位於前方的節點：取全部文字。
+    // - 橫跨邊界的節點：主段側取「覆蓋主段鍵數」的 prefix，前方側取「覆蓋前方鍵數」的 suffix。
+    var counter = 0
+    var tailText = ""
+    var mainValues: [String] = []
+    for gram in copilot.assembledSentence {
+      let segLength = gram.keyArray.count
+      let nodeStart = counter
+      counter += segLength
+      if nodeStart >= mainLength {
+        // 完全位於前方的節點：取全部文字。
+        tailText += gram.value
+        continue
+      }
+      if counter <= mainLength {
+        // 完全位於主段的節點：取全部文字。
+        mainValues.append(gram.value)
+      } else {
+        // 橫跨邊界的節點：主段側 prefix、前方側 suffix。
+        let mainCovered = mainLength - nodeStart
+        mainValues.append(String(gram.value.prefix(mainCovered)))
+        tailText += String(gram.value.suffix(counter - mainLength))
+      }
+    }
+    guard !tailText.isEmpty else { return nil }
+    // 橫跨節點偵測：copilot 組句的最後節點若其範圍起點在前方位置（mainLength）之前，
+    // 即為橫跨「最後提交鍵＋前方」邊界的節點（涵蓋最末鍵者必為最後節點）。
+    var crossingPair: CandidateInState?
+    var tailReading: String?
+    if let lastGram = copilot.assembledSentence.last {
+      tailReading = lastGram.keyArray.last // 最末節點的最後一個讀音＝前方位置的選讀。
+      let lastStart = copilot.assembledSentence.totalKeyCount - lastGram.keyArray.count
+      if lastStart < mainLength {
+        crossingPair = (keyArray: lastGram.keyArray, value: lastGram.value)
+      }
+    }
+    return (bucket, tailText, crossingPair, mainValues, tailReading)
+  }
+
+  /// 狂拼模式的前方候選清單：置頂為 copilot 預覽猜測值，其餘取自語言模組對讀音桶的查詢。
+  ///
+  /// 閘門與 `furiousFrontContext` 一致；狂拼停用或預覽無法成立時回傳 nil。
+  var furiousTypingFrontCandidates: [CandidateInState]? {
+    guard let furiousContext = furiousFrontContext else { return nil }
+    let candidates = buildFuriousFrontCandidates(from: furiousContext)
+    return candidates.isEmpty ? nil : candidates
+  }
+
+  /// 狂拼模式的前方簡拼整詞上下文（R2-α）：注拼槽整段無法展開成單一音節桶時
+  /// （如「ysxb」），以 chop＋deduct 產生「每位置的 & 連接前綴候選」。
+  ///
+  /// 與 `furiousFrontContext` 互斥：單音節前綴走既有桶路徑，多音節簡拼走本路徑。
+  /// 回傳的 cells 可直接餵給 `LookupHub.abbreviatedWordCandidates(keysChopped:)`。
+  /// 以注拼槽現況為準；R3-a 的自動套用需「含本拍字元」的版本，走 `furiousAbbreviatedCells(romaji:)`。
+  var furiousAbbreviatedCells: [String]? {
+    guard isFuriousTypingModeEffective else { return nil }
+    guard composer.intonation.isEmpty else { return nil }
+    let romaji = composer.romajiBuffer
+    guard !romaji.isEmpty else { return nil }
+    guard assembler.isCursorAtAssemblerEdge(direction: .front) else { return nil }
+    return furiousAbbreviatedCells(romaji: romaji)
+  }
+
+  /// 以給定拼音字母流計算簡拼整詞的 cells（前述閘門由呼叫方把守）。
+  /// 跨檔案 extension（`InputHandler_FuriousResegmentation` 的 α 自動套用）亦需使用，
+  /// 故不設為 private。
+  func furiousAbbreviatedCells(romaji: String) -> [String]? {
+    let trie = Tekkon.PinyinTrie.shared(parser: composer.parser)
+    let chopped = trie.chop(romaji)
+    guard chopped.count >= 2 else { return nil }
+    let cells = trie.deductChoppedPinyinToZhuyin(chopped)
+    guard cells.count >= 2, cells.allSatisfy({ !$0.isEmpty }) else { return nil }
+    return cells
+  }
+
+  /// 以整詞簡拼查詢（R2-α）生成前方候選。
+  ///
+  /// 依分數降冪排序（置頂為最佳整詞猜測），詞值去重已由語言模組完成。
+  func buildFuriousAbbreviatedCandidates(cells: [String]) -> [CandidateInState] {
+    currentLM.lookupHub.abbreviatedWordCandidates(keysChopped: cells).map {
+      (keyArray: $0.keyArray, value: $0.current)
+    }
+  }
+
+  /// 依據已通過閘門的前方上下文生成候選清單。
+  ///
+  /// 清單結構：置頂段（POM 建議→組句預覽，保持原順序）＋其餘候選（跨邊界雙鍵
+  /// 查詢、前方單音節查詢、trail＋注拼槽聯合重切整詞）按「詞長（segLength）降冪、
+  /// 再查詢分數（weight）降冪」stable-sort——長詞（含替代切分整詞如「反感」）
+  /// 浮於大量單音節候選之前，避免被擠到選字窗末頁。全程按 value 去重（保留先出現者）。
+  private func buildFuriousFrontCandidates(
+    from furiousContext: (
+      bucket: [String], preview: String, crossingPair: CandidateInState?,
+      assembledMainValues: [String], tailReading: String?
+    )
+  )
+    -> [CandidateInState] {
+    let bucket = furiousContext.bucket
+    var seenValues = Set<String>()
+    // 置頂段：組句預覽（crossingPair／preview）與 POM 建議——保持原順序置頂。
+    var anchored: [CandidateInState] = []
+    // 其餘候選（跨邊界／尾段／聯合重切）：帶查詢分數、按 (segLength, weight) 排序。
+    var ranked: [(keyArray: [String], value: String, weight: Double)] = []
+    // T1：copilot 窗置頂 POM 建議——以組字器副本＋虛擬尾段做唯讀查詢（不套用、不寫記憶），
+    // 狂拼容錯模式（逐段去聲調等值）取回記憶，使聲調桶／無調形代表鍵不致落空；
+    // 依分數降冪、按 value 去重置頂。
+    if prefs.fetchSuggestionsFromPerceptionOverrideModel {
+      let copilot = assembler.copy
+      if (try? copilot.insertKeys([.multipleKeys(bucket)])) != nil {
+        let suggestion = currentLM.fetchPOMSuggestion(
+          assembledResult: copilot.assembledSentence,
+          cursor: copilot.length - 1,
+          timestamp: Date().timeIntervalSince1970,
+          matchMode: .toneInsensitivePrefix
+        )
+        let pomCandidates = suggestion.candidates
+          .sorted { $0.probability > $1.probability }
+          .map { (keyArray: $0.keyArray, value: $0.value) }
+        for candidate in pomCandidates {
+          guard !candidate.value.isEmpty else { continue }
+          guard seenValues.insert(candidate.value).inserted else { continue }
+          anchored.append(candidate)
+        }
+      }
+    }
+    // 置頂候選：有橫跨節點時用完整詞音配對（最佳猜測含邊界文脈）；否則用前方預覽值。
+    // 與已置頂候選（POM 建議等）同值時跳過——copilot 窗去重：狂拼容錯查詢
+    // 與組句橫跨節點可能對同一詞各回傳一次（如「tamade」的 POM 建議與 crossingPair 皆為
+    // 「他媽的」），保留先出現者（POM 建議置頂語義不變）。
+    if let crossingPair = furiousContext.crossingPair {
+      if seenValues.insert(crossingPair.value).inserted {
+        anchored.append(crossingPair)
+      }
+    } else {
+      if seenValues.insert(furiousContext.preview).inserted {
+        anchored.append((keyArray: bucket, value: furiousContext.preview))
+      }
+    }
+    // 跨邊界候選：最後提交鍵＋前方桶的雙鍵查詢（組字器為空時不查）。
+    if let lastKey = assembler.keys.last {
+      for gram in currentLM.lookupHub.grams(for: [lastKey, .multipleKeys(bucket)]) {
+        guard !gram.current.isEmpty else { continue }
+        guard seenValues.insert(gram.current).inserted else { continue }
+        ranked.append((keyArray: gram.keyArray, value: gram.current, weight: gram.probability))
+      }
+    }
+    // 前方單音節候選：語言模組對讀音桶的查詢結果，依原順序取用、按 value 去重（保留先出現者）。
+    for gram in currentLM.lookupHub.grams(for: [.multipleKeys(bucket)]) {
+      guard !gram.current.isEmpty else { continue }
+      guard seenValues.insert(gram.current).inserted else { continue }
+      ranked.append((keyArray: gram.keyArray, value: gram.current, weight: gram.probability))
+    }
+    // trail＋注拼槽聯合重切候選——「fangan」連打時 copilot 窗即呈現「反感」
+    // （fan|gan）類替代切分整詞候選（與「fan gan」分開打的體驗一致）。
+    furiousCoSegmentedOffers = buildFuriousCoSegmentedOffers()
+    for offer in furiousCoSegmentedOffers {
+      guard seenValues.insert(offer.value).inserted else { continue }
+      ranked.append((keyArray: offer.keyArray, value: offer.value, weight: offer.weight))
+    }
+    return anchored.map { ($0.keyArray, $0.value) } + ranked
+      .stableSort { lhs, rhs in
+        (lhs.keyArray.count > rhs.keyArray.count)
+          || (lhs.keyArray.count == rhs.keyArray.count && lhs.weight > rhs.weight)
+      }
+      .map { ($0.keyArray, $0.value) }
+  }
+
+  /// 狂拼模式：就地確認前方候選，將其詞音配對覆寫至組字器尾端的新插入 span。
+  ///
+  /// 先清空注拼槽、把候選的讀音（或讀音桶）插入組字器，再對 anchor 起的新 span 覆寫
+  /// 使用者指定的詞音配對。任一環節失敗時靜默退回，不更動既有狀態語義。
+  /// 注意：僅當確認來自**使用者顯式選字**（Shift+選字鍵／滑鼠點選，`memorizePOM: true`）
+  /// 時才收集 POM 觀察；Enter 固化高亮候選（`memorizePOM` 預設 false）不寫入——copilot 未經
+  /// 使用者逐字確認的最佳猜測不應寫入漸退記憶模組（否則記憶的短詞會綁架長詞的組句，
+  /// 如「是嗎」綁架「是媽媽」→「是嗎嗎」）。
+  /// - Parameters:
+  ///   - candidate: 使用者選中的前方候選。
+  ///   - memorizePOM: 是否收集 POM 觀察（僅使用者顯式選字的確認路徑傳入 true）。
+  public func confirmFuriousFrontCandidate(
+    _ candidate: CandidateInState,
+    memorizePOM: Bool = false
+  ) {
+    // 閘門再驗：與預覽／候選清單共用同一套守衛。
+    guard hasFuriousFrontPending else { return }
+    // P164 補修：聯合重切候選（trail＋注拼槽替代切分）確認——執行切分替換、
+    // trail 更新為新切分、清注拼槽；不遞交、不寫 POM 觀察（讀音層變更）。
+    if applyFuriousCoSegmentedOfferIfAny(candidate: candidate) { return }
+    // α 路徑：注拼槽整段無法展開成單一音節桶（如「ysxb」）時，以簡拼整詞候選確認。
+    let furiousContext = furiousFrontContext
+    let abbreviatedCells = furiousContext == nil ? furiousAbbreviatedCells : nil
+    guard furiousContext != nil || abbreviatedCells != nil else { return }
+    invalidateFuriousTrail() // 就地選字為使用者顯式干涉：狂拼 trail 失效。
+    furiousHighlightOverride = nil // 高亮覆寫僅供當拍消費。
+    let bucket = furiousContext?.bucket ?? []
+    guard !candidate.value.isEmpty else { return }
+    let preservedSentenceBeforeConsolidation = assembler.assembledSentence
+    let preservedCursorPosition = actualNodeCursorPosition
+    let romajiBackup = composer.romajiBuffer
+    composer.replacePinyinBuffer(with: "")
+    // 三路徑套用（置頂無橫跨／跨邊界／前方單音節）共用於真實確認與高亮預覽。
+    var pomObservation: Homa.PerceptionIntel?
+    let outcome = applyFuriousFrontCandidate(
+      candidate, to: assembler, bucket: bucket,
+      perceptionHandler: memorizePOM ? { pomObservation = $0 } : nil
+    )
+    switch outcome {
+    case .failed:
+      // 失敗防禦：復原注拼槽暫存，靜默退回。
+      composer.replacePinyinBuffer(with: romajiBackup)
+      return
+    case .inserted:
+      // 覆寫失敗：保留已插入讀音（組句結果與 copilot 預覽一致）。
+      return
+    case .overridden:
+      break
+    }
+    // 僅使用者顯式選字（memorizePOM）才進入 POM 觀察；Enter 固化高亮候選不寫入。
+    guard memorizePOM else { return }
+    if let adjustedObservation = Homa.makePerceptionIntel(
+      previouslyAssembled: preservedSentenceBeforeConsolidation,
+      currentAssembled: assembler.assembledSentence,
+      cursor: preservedCursorPosition
+    ) {
+      pomObservation = adjustedObservation
+    }
+    if let pomObservation, pomObservation.scoreFromLM > -12,
+       prefs.fetchSuggestionsFromPerceptionOverrideModel {
+      vCLog("POM: Start Observation.")
+      prefs.failureFlagForPOMObservation = true
+      currentLM.memorizePerception(
+        (pomObservation.contextualizedGramKey, pomObservation.candidate),
+        timestamp: Date().timeIntervalSince1970,
+        saveCallback: pomSaveCallback
+      )
+      prefs.failureFlagForPOMObservation = false
+    }
+  }
+
   /// 生成「正在輸入」狀態。相關的內容會被拿給狀態機械用來處理在電腦螢幕上顯示的內容。
   /// - Parameters:
   ///   - sansReading: 不顯示組音區/組筆區。
@@ -25,27 +313,44 @@ extension InputHandlerProtocol {
     guarded: Bool = false
   )
     -> State {
+    furiousHighlightOverride = nil // 高亮覆寫僅供當拍消費（高亮預覽不走本函數）。
     if isConsideredEmptyForNow, !guarded { return State.ofAbortion() }
     restoreBackupCursor() // 只要叫了 Inputting 狀態，就盡可能還原游標備份。
     var segHighlightedAt: Int?
     let handleAsCodePointInput = currentTypingMethod == .codePoint && !sansReading
     let handleAsRomanNumeralInput = currentTypingMethod == .romanNumerals && !sansReading
+    // 先提出來讀音資料，減輕運算負擔。
+    let noReading = sansReading || [.codePoint, .romanNumerals].contains(currentTypingMethod)
+    let furiousContext: (
+      bucket: [String], preview: String, crossingPair: CandidateInState?,
+      assembledMainValues: [String], tailReading: String?
+    )? = noReading ? nil : furiousFrontContext
+    let furiousPreview: String? = furiousContext?.preview
     /// 「更新內文組字區 (Update the composing buffer)」是指要求客體軟體將組字緩衝區的內容
     /// 換成由此處重新生成的原始資料在 IMEStateData 當中生成的 NSAttributeString。
     var displayTextSegments: [String] = handleAsCodePointInput || handleAsRomanNumeralInput
       ? [strCodePointBuffer]
       : compositionBufferDisplayTextSegments(reflectBPMFVS: !sansReading)
+    // 狂拼模式：主段顯示與前方預覽同源於 copilot 全句組句（含邊界文脈），取代 main
+    // 組字器自身的組句結果；主段節點數可能與 main 組字器不同，故原始片段同步退位。
+    if let furiousContext {
+      displayTextSegments = furiousContext.assembledMainValues
+    }
     // 原始（未經 BPMFVS 投影）的文字片段。僅在 BPMFVS 投影啟用時才需要額外追蹤。
     var rawSegments: [String]? = (!handleAsCodePointInput && !handleAsRomanNumeralInput && !sansReading)
       ? rawDisplayTextSegmentsIfNeeded
       : nil
+    if furiousContext != nil { rawSegments = nil }
     var cursor = handleAsCodePointInput || handleAsRomanNumeralInput
       ? displayTextSegments.joined().count
       : convertCursorForDisplay(assembler.cursor)
+    // 狂拼模式：游標恆在組字區最前端（= 主段範圍末端），直接以主段字數定位，
+    // 避免 main 組字器組句與 copilot 主段分段差異造成顯示游標偏移。
+    if furiousContext != nil {
+      cursor = displayTextSegments.joined().count
+    }
     let cursorSansReading = cursor
-    // 先提出來讀音資料，減輕運算負擔。
-    let noReading = sansReading || [.codePoint, .romanNumerals].contains(currentTypingMethod)
-    let reading: String = noReading ? "" : readingForDisplay
+    let reading: String = noReading ? "" : (furiousPreview ?? readingForDisplay)
     if !reading.isEmpty {
       var newDisplayTextSegments = [String]()
       var temporaryNode = ""
@@ -107,6 +412,26 @@ extension InputHandlerProtocol {
     if prefs.mixedAlphanumericalEnabled, !mixedAlphanumericalBuffer.isEmpty {
       result.tooltip = mixedAlphanumericalBuffer
       result.tooltipDuration = 0 // 設為 0 使 Tooltip 恆久顯示，直到混打模式結束。
+    }
+    /// 狂拼模式：預覽啟用時附加前方候選清單，使候選窗常駐顯示。
+    if let furiousContext {
+      let tailCandidates = buildFuriousFrontCandidates(from: furiousContext)
+      if !tailCandidates.isEmpty { result.candidates = tailCandidates }
+    }
+    /// 狂拼模式：注拼槽整段無法展開成單一音節桶（如「ysxb」）時，
+    /// 以整詞簡拼查詢（R2-α）生成候選，使簡拼整詞在 copilot 窗中可選。
+    if furiousContext == nil, let abbreviatedCells = furiousAbbreviatedCells {
+      let abbreviatedCandidates = buildFuriousAbbreviatedCandidates(cells: abbreviatedCells)
+      if !abbreviatedCandidates.isEmpty { result.candidates = abbreviatedCandidates }
+    }
+    /// 狂拼模式：候選窗不顯示時，以 Tooltip 顯示注拼槽暫存的原始拼音，
+    /// 讓使用者仍能核對自己實際敲下的字母。候選窗顯示時抑制 tooltip，避免
+    /// 與候選窗重疊（原文拼音的可見性改由固化後正常選字窗的 revlookup 承擔）。
+    /// α 路徑（多音節簡拼）查無命中時亦顯示暫存拼音。
+    if result.tooltip.isEmpty, result.candidates.isEmpty, furiousPreview != nil
+      || (furiousContext == nil && furiousAbbreviatedCells != nil) {
+      result.tooltip = composer.romajiBuffer
+      result.tooltipDuration = 0 // 恆久顯示，直到暫存拼音被確認或清除。
     }
     return result
   }
@@ -171,7 +496,17 @@ extension InputHandlerProtocol {
     displayTextSegments = displayTextSegments.map { $0.trimmingCharacters(in: .newlines) }
     var displayedText = displayTextSegments.joined()
     let noReading = sansReading || [.codePoint, .romanNumerals].contains(currentTypingMethod)
-    let reading: String = noReading ? "" : readingForDisplay
+    // 狂拼模式：遞交內容與 composition buffer 顯示同源於 copilot 全句組句
+    // （主段＋前方預覽），確保 IMK 強制遞交（CpLk 等）與所見一致。狂拼的前方
+    // 預覽是 copilot 組句後的中文文字、並非未完成拼寫的原文拼音，故 sansReading
+    // （剔除未完成讀音）不適用於此分支——否則 CpLk 等強制遞交會遞交組字器自身的
+    // 組句結果、與內文組字區顯示不符。
+    // （Enter 直遞已定案為「固化＋停留」，不再走此全句遞交路徑。）
+    if let furiousContext = [.codePoint, .romanNumerals].contains(currentTypingMethod)
+      ? nil : furiousFrontContext {
+      return furiousContext.assembledMainValues.joined() + furiousContext.preview
+    }
+    let reading: String = noReading ? "" : (furiousTypingPreviewedReading ?? readingForDisplay)
     guard !reading.isEmpty else { return displayedText }
     let cursor = max(min(convertCursorForDisplay(assembler.cursor), displayedText.count), 0)
     let insertionIndex = displayedText.index(displayedText.startIndex, offsetBy: cursor)
@@ -483,7 +818,7 @@ extension InputHandlerProtocol {
   @discardableResult
   func handleEnter(
     input: InputSignalProtocol, readingOnly: Bool = false,
-    associatesData: @escaping () -> ([CandidateInState]) = { [] }
+    associatesData: () -> ([CandidateInState]) = { [] }
   )
     -> Bool {
     guard let session = session else { return false }
@@ -617,6 +952,7 @@ extension InputHandlerProtocol {
           // 此處刻意使用 Assembler 的 API（assembler.dropKey）以避免呼叫
           // InputHandler 的 dropKey 中所包含的 KeyDropContext 回補邏輯。
           try? assembler.dropKey(direction: .rear)
+          popFuriousTrail(1) // 注拼槽為空時刪除組字器尾鍵：狂拼 trail 精確同步。
           prevReading.1.map(\.description).forEach {
             composer.receiveKey(fromPhonabet: $0.unicodeScalars.first)
           }
@@ -656,6 +992,8 @@ extension InputHandlerProtocol {
           try? assembler.dropKey(direction: .rear)
         }
       }
+      // 注拼槽為空時刪除組字器尾鍵：狂拼 trail 精確同步（尾鍵必然為 trail 所對應）。
+      popFuriousTrail(actualSteps)
     } else {
       _ = input.commonKeyModifierFlags == .option
         ? clearComposerAndCalligrapher()
@@ -757,6 +1095,7 @@ extension InputHandlerProtocol {
     guard let session = session else { return false }
     let state = session.state
     guard state.type == .ofInputting else { return false }
+    invalidateFuriousTrail() // 游標離開組字區最前端：狂拼 trail 失效。
 
     if !isComposerOrCalligrapherEmpty {
       errorCallback?("ABC44080")
@@ -781,6 +1120,7 @@ extension InputHandlerProtocol {
     guard let session = session else { return false }
     let state = session.state
     guard state.type == .ofInputting else { return false }
+    invalidateFuriousTrail() // 游標離開組字區最前端：狂拼 trail 失效。
 
     if !isComposerOrCalligrapherEmpty {
       errorCallback?("9B69908D")
@@ -846,6 +1186,37 @@ extension InputHandlerProtocol {
 
   // MARK: - 處理向前方向鍵的行為
 
+  /// 注拼槽有未完成拼裝的讀音時，前後方向鍵不受理游標移動的專屬規則。
+  ///
+  /// 僅攔「不含 Ctrl/Option/Command」的前後方向鍵（Shift 組合亦在此列；其餘修飾
+  /// 組合維持既有行為）。注拼槽為空時回傳 nil、交由既有流程處理：
+  /// - Shift+前後方向鍵：僅狂拼 copilot 窗可見時先固化前方（成功後注拼槽清空），
+  ///   再放行續走 Shift 標記流程；其餘情況直接放行、落回既有守衛
+  ///   （`!isComposerOrCalligrapherEmpty` 會以 errorCallback 退回）。
+  /// - 無修飾前後方向鍵（W3 規則）：狂拼 copilot 窗可見 → 固化＋開出正常選字窗＋
+  ///   同一事件交給 `handleCandidate` 導航候選高亮；否則直接 error 退回。
+  private func handlePendingReadingCursorKeys(_ input: InputSignalProtocol) -> Bool? {
+    guard !composer.isEmpty else { return nil }
+    guard !input.isHoldingAny([.control, .option, .command]) else { return nil }
+    guard let session = session else { return nil }
+    if input.isShiftHeld {
+      // Shift+前後方向鍵：僅狂拼窗可見時固化前方；放行後 handleForward/Backward 的
+      // Shift 分支自然生成 marking state（無需遞迴）。非狂拼落回既有守衛。
+      if session.isFuriousCopilotCandidateWindowVisible {
+        solidifyFuriousFrontReading()
+      }
+      return nil
+    }
+    // 無修飾前後方向鍵（W3 規則不變）。
+    if session.isFuriousCopilotCandidateWindowVisible {
+      solidifyFuriousFrontReading()
+      session.switchState(generateStateOfCandidates())
+      return handleCandidate(input: input)
+    }
+    errorCallback?("C4D7F3E9")
+    return true
+  }
+
   /// 處理向前方向鍵的行為。
   /// - Parameters:
   ///   - input: 輸入按鍵訊號。
@@ -854,6 +1225,10 @@ extension InputHandlerProtocol {
     guard let session = session else { return false }
     let state = session.state
     guard state.type == .ofInputting else { return false }
+    // 注拼槽有未完成拼裝的讀音時，不受理無修飾前後方向鍵的游標移動：
+    // 狂拼 copilot 窗可見 → 固化＋開正常選字窗＋同一事件導航高亮；否則 error 退回。
+    if let handled = handlePendingReadingCursorKeys(input) { return handled }
+    invalidateFuriousTrail() // 游標移動：狂拼 trail 失效。
 
     if !isComposerOrCalligrapherEmpty {
       errorCallback?("B3BA5257")
@@ -920,6 +1295,10 @@ extension InputHandlerProtocol {
     guard let session = session else { return false }
     let state = session.state
     guard state.type == .ofInputting else { return false }
+    // 注拼槽有未完成拼裝的讀音時，不受理無修飾前後方向鍵的游標移動：
+    // 狂拼 copilot 窗可見 → 固化＋開正常選字窗＋同一事件導航高亮；否則 error 退回。
+    if let handled = handlePendingReadingCursorKeys(input) { return handled }
+    invalidateFuriousTrail() // 游標移動：狂拼 trail 失效。
 
     if !isComposerOrCalligrapherEmpty {
       errorCallback?("6ED95318")
@@ -987,6 +1366,7 @@ extension InputHandlerProtocol {
   func revolveCandidate(reverseOrder: Bool, softRevolve: Bool = false) -> Bool {
     guard let session = session else { return false }
     let state = session.state
+    invalidateFuriousTrail() // 輪替為使用者顯式干涉：狂拼 trail 失效。
     if isComposerOrCalligrapherEmpty,
        assembler.isEmpty || assembler.assembledSentence.isEmpty { return false }
     guard state.type == .ofInputting else {
@@ -1162,6 +1542,9 @@ extension InputHandlerProtocol {
     if input.isASCII, !input.charCode.isPrintableASCII { return false }
 
     // 將整個組字區的內容遞交給客體應用。
+    // 此處 `lowercased()` 是刻意的行為：
+    // 使用者關掉系統的 CpLk 中英輸入法切換之後，想在 CpLk 亮燈時直接打英數的話，
+    // 會希望在尚未摁 Shift 的時候預設敲小寫英數。
     session.switchState(State.ofCommitting(textToCommit: input.text.lowercased()))
 
     return true

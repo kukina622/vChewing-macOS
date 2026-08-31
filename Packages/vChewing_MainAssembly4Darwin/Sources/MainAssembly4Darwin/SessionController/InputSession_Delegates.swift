@@ -114,7 +114,7 @@ extension SessionProtocol {
     switch inputMode {
     case .imeModeCHS: return "zh-Hans"
     case .imeModeCHT:
-      if !prefs.shiftJISShinjitaiOutputEnabled, !prefs.chineseConversionEnabled {
+      if prefs.kanjiConversionPreferences == 0 {
         return "zh-Hant"
       }
       return "ja"
@@ -124,8 +124,7 @@ extension SessionProtocol {
 
   public var clientAccentColor: HSBA? {
     var nullResponse = !prefs.respectClientAccentColor
-    nullResponse = nullResponse || prefs.shiftJISShinjitaiOutputEnabled
-    nullResponse = nullResponse || prefs.chineseConversionEnabled
+    nullResponse = nullResponse || prefs.kanjiConversionPreferences != 0
     guard !nullResponse else { return nil }
     guard !NSApp.isAccentColorCustomized else { return nil }
     if #unavailable(macOS 10.14) { return nil }
@@ -178,12 +177,17 @@ extension SessionProtocol {
   public func candidateToolTip(shortened: Bool) -> String {
     if state.type == .ofAssociates {
       return shortened ? "⇧" : "i18n:StateOfInputting.Tooltip.HoldShiftChooseAssociates".i18n
+    } else if isFuriousCopilotCandidateWindowVisible {
+      // 狂拼 copilot 候選窗：就地選字需 Shift＋選字鍵（IH117C 語義不變）。
+      // 該窗常駐於 Inputting 狀態、與 tooltip 窗重疊，故以專屬 Shift 提示取代
+      // 「⚡️ 快速候選」（後者原為非磁帶下 quick-candidates 分支的顯示內容）。
+      return "i18n:CandidateWindow.Tooltip.HoldShiftToSelect".i18n
     } else if state.type == .ofInputting, state.isCandidateContainer {
       let useShift = inputMode.langModel.areCassetteCandidateKeysShiftHeld
       let theEmoji = useShift ? "⬆️" : "⚡️"
       return shortened ? theEmoji : "\(theEmoji) " + "i18n:StateOfInputting.Tooltip.QuickCandidates".i18n
     } else if prefs.cassetteEnabled {
-      return shortened ? "📼" : "📼 " + "i18n:UserDef.kUsingHotKeyRevLookup.shortTitle".i18n
+      return shortened ? "📼" : "📼 " + "i18n:UserDef.kUsingHotKeyCassette.shortTitle".i18n
     } else if state.type == .ofSymbolTable, state.node.containsCandidateServices {
       return shortened ? "🌎" : "🌎 " + "i18n:Menu.ServiceMenu".i18n
     }
@@ -193,13 +197,21 @@ extension SessionProtocol {
   @discardableResult
   public func reverseLookup(for value: String) -> [String] {
     let blankResult: [String] = []
+    // 狂拼模式的讀音回顯：這是使用者自己敲入的字母流的即時回顯（tooltip 已因與
+    // 候選窗重疊的問題被抑制，這是狂拼模式下敲鍵內容的唯一可見管道），並非反查，
+    // 因此刻意不受 showReverseLookupInCandidateUI 總開關與 isVerticalTyping 守衛節制。
+    if isFuriousCopilotCandidateWindowVisible,
+       let romaji = inputHandler?.composer.romajiBuffer, !romaji.isEmpty {
+      return [romaji]
+    }
     // 這一段專門處理「反查」。
     if !prefs.showReverseLookupInCandidateUI { return blankResult }
     if state.type == .ofInputting, state.isCandidateContainer,
        inputHandler?.currentLM.nullCandidateInCassette == value {
       return blankResult
     }
-    if isVerticalTyping { return blankResult } // 縱排輸入的場合，選字窗沒有足夠的空間顯示反查結果。
+    // 縱排輸入的場合，選字窗沒有足夠的空間顯示反查結果。
+    if isVerticalTyping { return blankResult }
     if value.isEmpty { return blankResult } // 空字串沒有需要反查的東西。
     if value.contains("_") { return blankResult }
     // 因為唯音輸入法的反查結果僅由磁帶模組負責，所以相關運算挪至 LMInstantiator 內處理。
@@ -232,6 +244,14 @@ extension SessionProtocol {
     guard state.highlightedCandidateIndex != theIndex else { return }
     state.highlightedCandidateIndex = theIndex
     guard state.isCandidateContainer, let theIndex else { return }
+    // 狂拼 copilot 窗：高亮即時反映到組字區（scratch 預覽、不計 POM、不動真組字器）。
+    if isFuriousCopilotCandidateWindowVisible,
+       (0 ..< state.candidates.count).contains(theIndex) {
+      let candidate = state.candidates[theIndex]
+      inputHandler.furiousHighlightOverride = candidate
+      inputHandler.previewFuriousHighlightedCandidate(candidate)
+      return
+    }
     switch state.type {
     case .ofCandidates where (0 ..< state.candidates.count).contains(theIndex):
       inputHandler.previewCurrentCandidateAtCompositionBuffer()
@@ -322,6 +342,15 @@ extension SessionProtocol {
       )
       if !associates.candidates.isEmpty { result = associates }
     case .ofInputting where (0 ..< state.candidates.count).contains(index):
+      // 狂拼模式：前方候選就地選字（滑鼠點選／Shift+選字鍵亦走這裡）。
+      // 使用者顯式選字＝符合 POM 記憶的明確意志，故傳入 memorizePOM: true。
+      if inputHandler.isFuriousTypingModeEffective {
+        let selectedValue = state.candidates[index]
+        inputHandler.confirmFuriousFrontCandidate(selectedValue, memorizePOM: true)
+        switchState(inputHandler.generateStateOfInputting())
+        return
+      }
+      // 以下為磁帶語義。
       let chosenStr = state.candidates[index].value
       guard !chosenStr.isEmpty, chosenStr != inputHandler.currentLM.nullCandidateInCassette else {
         callError("907F9F64")

@@ -40,6 +40,7 @@ extension Homa {
       self.perceptor = target.perceptor
       self.gramQueryCache = target.gramQueryCache
       self.gramQueryCacheOrder = target.gramQueryCacheOrder
+      self.mostRecentPathScore = target.mostRecentPathScore
     }
 
     // MARK: Public
@@ -68,6 +69,15 @@ extension Homa {
     /// - Remark: setter 為 `internal`：組字器在模組內部需要就地改寫節點狀態（節點為
     /// Struct、無法再靠引用穿透值拷貝），但對模組外部維持唯讀。
     public internal(set) var config = Config()
+
+    /// 最近一次組句（assemble）所得到的最佳路徑總分。
+    ///
+    /// 尚未組句、或組句時圖不可達（無可用的節點）時為 `Double(Int32.min)`。
+    /// 組字器的任何結構性變更（insertKey／dropKey 等）都會經由 assignNodes 觸發
+    /// 組句，故此數值在讀取前已是最新狀態。
+    /// - Remark: setter 為 `internal`：組句邏輯位於模組內的其它檔案，需要跨檔案寫入；
+    ///   對模組外部維持唯讀。
+    public internal(set) var mostRecentPathScore: Double = .init(Int32.min)
 
     /// 最近一次組句結果。
     public var assembledSentence: [GramInPath] {
@@ -158,6 +168,7 @@ extension Homa {
       config.clear()
       gramQueryCache.removeAll(keepingCapacity: true)
       gramQueryCacheOrder.removeAll(keepingCapacity: true)
+      mostRecentPathScore = Double(Int32.min)
     }
 
     /// 在游標位置插入給定的索引鍵（單一讀音，無聲調替代）。
@@ -372,13 +383,28 @@ extension Homa {
         let upperbound = Swift.min(cursor + maxSegLength, keys.count)
         rangeOfPositions = lowerbound ..< upperbound
       }
-      // 若掃描半徑 > 4 且範圍內有複合讀音鍵，動態縮減 maxSegLength 以避免笛卡爾積爆炸。
+      // 若掃描半徑 > 4 且窗內各鍵讀音數的乘積超過預算，動態縮減 maxSegLength 以避免笛卡爾積爆炸。
+      // 以「乘積」取代過往的「見桶即縮」：只針對真實超標的場合縮減，
+      // 讓全拼長詞（含免聲調的 5 音節以下組合）得以正常組句。
+      // 此預算與 LangModelAssembly 的笛卡爾積防禦閾值一致（625，P167 依末代
+      // Intel 硬體實測再校準：4,000 仍卡、625（=5⁴）順暢——維持免聲調 4 音節
+      // 可組、砍掉 5 音節以上）。
       if maxSegLength > 4 {
-        let hasMultipleKeysInRange = rangeOfPositions.contains { position in
-          guard keys.indices.contains(position) else { return false }
-          return keys[position].isMultiple
+        let kCartesianBudgetLimit = 625
+        var product = 1
+        var budgetExceeded = false
+        for position in rangeOfPositions {
+          guard keys.indices.contains(position) else { continue }
+          let count = keys[position].count
+          guard count > 1 else { continue }
+          // 飽和乘法：一旦超過預算即早停，避免乘積溢出。
+          if product > kCartesianBudgetLimit / count {
+            budgetExceeded = true
+            break
+          }
+          product *= count
         }
-        if hasMultipleKeysInRange {
+        if budgetExceeded {
           maxSegLength = 4
         }
       }
@@ -468,7 +494,10 @@ extension Homa {
       if lhs.keyArray != rhs.keyArray {
         return lhs.keyArray.lexicographicallyPrecedes(rhs.keyArray)
       }
-      return (lhs.previous ?? "") < (rhs.previous ?? "")
+      if (lhs.previous ?? "") != (rhs.previous ?? "") {
+        return (lhs.previous ?? "") < (rhs.previous ?? "")
+      }
+      return (lhs.anterior ?? "") < (rhs.anterior ?? "")
     }
 
     private static func makeGramIdentityHash(_ gram: Homa.Gram) -> Int {
@@ -476,6 +505,7 @@ extension Homa {
       hasher.combine(gram.keyArray)
       hasher.combine(gram.current)
       hasher.combine(gram.previous)
+      hasher.combine(gram.anterior)
       return hasher.finalize()
     }
 

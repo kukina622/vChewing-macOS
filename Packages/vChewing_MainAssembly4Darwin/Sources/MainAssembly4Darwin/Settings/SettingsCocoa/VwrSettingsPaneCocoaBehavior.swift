@@ -89,7 +89,7 @@ extension SettingsPanesCocoa {
                 fixWidth: innerContentWidth,
                 prefUITab: .tabBehavior
               )
-            }
+            }?.boxed()
             NSView()
           }
           NSTabView.TabPage(title: "Ｃ") {
@@ -207,6 +207,12 @@ extension SettingsPanesCocoa {
                   prefUITab: .tabBehavior
                 )
               }
+            }?.boxed()
+            NSStackView.buildSection(width: innerContentWidth) {
+              UserDef.kFuriousTypingEnabled.renderCocoa(
+                fixWidth: innerContentWidth,
+                prefUITab: .tabBehavior
+              )
             }?.boxed()
             NSView()
           }

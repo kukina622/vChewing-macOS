@@ -34,6 +34,17 @@ extension LMAssembly {
       forceHighScoreOverride ? .withSpecified : .withTopGramScore
     }
   }
+
+  /// POM 查詢模式。
+  ///
+  /// - `.exact`：現行行為——ngramKey 等值查詢＋`alternateKeys` 等值/後綴比對。
+  /// - `.toneInsensitivePrefix`：狂拼容錯查詢——三位置讀音「逐段去聲調等值」比對
+  ///   （query 讀音恆為完整音節，故前綴語義退化成去聲調等值，避免 `ma`↔`mang` 跨音節誤配），
+  ///   values 於上下文位置維持 exact、head 位置放寬（容許建議替換當前最佳猜測）。
+  public enum POMQueryMode: String, Sendable {
+    case exact
+    case toneInsensitivePrefix
+  }
 }
 
 // MARK: - LMAssembly.LXPerceptor
@@ -299,7 +310,8 @@ extension LMAssembly.LXPerceptor {
   nonisolated public func fetchSuggestion(
     assembledResult: [Homa.GramInPath],
     cursor: Int,
-    timestamp: Double
+    timestamp: Double,
+    matchMode: LMAssembly.POMQueryMode = .exact
   )
     -> LMAssembly.OverrideSuggestion {
     guard let currentNodeResult = assembledResult.findGramWithRange(at: cursor) else {
@@ -332,6 +344,15 @@ extension LMAssembly.LXPerceptor {
             activeKey = fallbackKey
             break
           }
+        }
+      }
+      // 容錯模式：exact＋alternateKeys 皆落空時，改以「逐段去聲調等值」全掃描重試。
+      if suggestions == nil, matchMode == .toneInsensitivePrefix {
+        if let tolerantSuggestion = getToneInsensitiveSuggestion(
+          key: keyGenerationResult.ngramKey,
+          timestamp: timestamp
+        ) {
+          suggestions = tolerantSuggestion
         }
       }
 
@@ -420,6 +441,193 @@ extension LMAssembly.LXPerceptor {
     }
 
     return candidates.isEmpty ? nil : candidates // 確保當陣列為空時返回 nil
+  }
+
+  /// 容錯查詢（`.toneInsensitivePrefix`）：在 LRU 全表內掃描「逐段去聲調等值」匹配的記憶。
+  ///
+  /// 與 `getSuggestion` 相同的權重／閾值邏輯，但比對規則放寬：
+  /// - 讀音：stored 與 query 的「對應位置」讀音逐段去除聲調記號後**等值**（含段數一致；
+  ///   query 讀音恆為完整音節，去聲調等值即為安全的 prefix 退化，避免 `ma`↔`mang` 跨音節誤配）。
+  /// - 上下文（previous／anterior）：values 維持 exact；query 無該位置上下文時視為萬用
+  ///   （與 `alternateKeys` 的 `compareContextPart` 同語義）。
+  /// - head：values 放寬（容許建議替換當前最佳猜測——POM 修正的核心用途）。
+  /// - 回傳候選的 keyArray 採用 query 的 head 讀音段（套用至當前位置）。
+  nonisolated func getToneInsensitiveSuggestion(
+    key: String,
+    timestamp: Double
+  )
+    -> [(
+      keyArray: [String],
+      value: String,
+      probability: Double,
+      previous: String?
+    )]? {
+    guard let parts = parsePerceptionKey(key) else { return nil }
+    guard !shouldIgnorePerception(parts) else { return nil }
+    guard !parts.headReading.isEmpty else { return nil }
+    let separatorString = Homa.Assembler.theSeparator
+    let queryHeadSegments =
+      separatorString.isEmpty
+        ? (parts.headReading.isEmpty ? [] : [parts.headReading])
+        : parts.headReading.components(separatedBy: separatorString).filter { !$0.isEmpty }
+    let effectiveKeyArray = queryHeadSegments.isEmpty ? [parts.headReading] : queryHeadSegments
+    let previousStr = parts.previous?.value
+
+    var candidates:
+      [(
+        keyArray: [String],
+        value: String,
+        probability: Double,
+        previous: String?
+      )] = .init()
+    var currentHighScore: Double = threshold
+
+    for kvPair in mutLRUMap.values {
+      guard let candidateParts = parsePerceptionKey(kvPair.key) else { continue }
+      guard !shouldIgnorePerception(candidateParts) else { continue }
+      guard matchesToneInsensitively(candidateParts, query: parts, separatorString: separatorString) else {
+        continue
+      }
+      let perception = kvPair.perception
+      let isUnigramKey = candidateParts.previous == nil && candidateParts.anterior == nil
+      let isSingleCharUnigram = isUnigramKey && queryHeadSegments.count == 1
+      for (candidate, override) in perception.overrides {
+        let overrideScore = calculateWeight(
+          eventCount: override.count,
+          totalCount: perception.count,
+          eventTimestamp: override.timestamp,
+          timestamp: timestamp,
+          isUnigram: isUnigramKey,
+          isSingleCharUnigram: isSingleCharUnigram
+        )
+        if overrideScore <= threshold { continue }
+        if overrideScore > currentHighScore {
+          candidates = [
+            (
+              keyArray: effectiveKeyArray,
+              value: candidate,
+              probability: overrideScore,
+              previous: previousStr
+            ),
+          ]
+          currentHighScore = overrideScore
+        } else if overrideScore == currentHighScore {
+          candidates.append(
+            (
+              keyArray: effectiveKeyArray,
+              value: candidate,
+              probability: overrideScore,
+              previous: previousStr
+            )
+          )
+        }
+      }
+    }
+    return candidates.isEmpty ? nil : candidates
+  }
+
+  /// 容錯比對：三位置讀音「逐段去聲調等值」＋上下文 values exact。
+  nonisolated private func matchesToneInsensitively(
+    _ stored: PerceptionKeyParts,
+    query: PerceptionKeyParts,
+    separatorString: String
+  )
+    -> Bool {
+    func segments(of reading: String) -> [String] {
+      guard !separatorString.isEmpty else { return reading.isEmpty ? [] : [reading] }
+      return reading.components(separatedBy: separatorString).filter { !$0.isEmpty }
+    }
+    func readingToneStrippedEqual(_ stored: String, _ query: String) -> Bool {
+      guard !stored.isEmpty, !query.isEmpty else { return false }
+      return toneStrippedReading(stored) == toneStrippedReading(query)
+    }
+    func contextMatches(_ stored: (reading: String, value: String)?, query: (reading: String, value: String)?)
+      -> Bool {
+      // query 無上下文 → 萬用（與 alternateKeys 的 compareContextPart 同語義）。
+      guard let query else { return true }
+      guard let stored else { return false }
+      guard stored.value == query.value else { return false }
+      let storedSegments = segments(of: stored.reading)
+      let querySegments = segments(of: query.reading)
+      guard storedSegments.count == querySegments.count else { return false }
+      return zip(storedSegments, querySegments).allSatisfy(readingToneStrippedEqual)
+    }
+    // head：讀音逐段去聲調等值（段數一致），values 放寬。
+    let storedHeadSegments = segments(of: stored.headReading)
+    let queryHeadSegments = segments(of: query.headReading)
+    guard storedHeadSegments.count == queryHeadSegments.count,
+          zip(storedHeadSegments, queryHeadSegments).allSatisfy(readingToneStrippedEqual)
+    else { return false }
+    guard contextMatches(stored.previous, query: query.previous) else { return false }
+    guard contextMatches(stored.anterior, query: query.anterior) else { return false }
+    return true
+  }
+
+  /// 去除讀音尾端的聲調記號（拼音數字聲調 1–5 與注音聲調記號 ˊˇˋ˙）。
+  nonisolated private func toneStrippedReading(_ reading: String) -> String {
+    let toneScalars: Set<Unicode.Scalar> = ["1", "2", "3", "4", "5", "ˊ", "ˇ", "ˋ", "˙"]
+    var scalars = Array(reading.unicodeScalars)
+    while let last = scalars.last, toneScalars.contains(last) {
+      scalars.removeLast()
+    }
+    return String(String.UnicodeScalarView(scalars))
+  }
+
+  /// 以 head 讀音取回所有高於閾值的 perception 記憶（供 n-gram 餵入，Phase 160 / S2）。
+  ///
+  /// 讀音比對沿用容錯語義（預設逐段去聲調等值；`.exact` 為逐段等值）；回傳每筆記憶的
+  /// previous 值（若有）與候選、權重。不做「只留最高分」篩選——n-gram 餵入需要全量記憶，
+  /// 各記憶的前後文（previous）即是 bigram 的條件鍵。
+  nonisolated func perceptionsFor(
+    headReading: String,
+    timestamp: Double,
+    matchMode: LMAssembly.POMQueryMode = .toneInsensitivePrefix
+  )
+    -> [(headReading: String, previous: String?, anterior: String?, candidate: String, probability: Double)] {
+    guard !headReading.isEmpty else { return [] }
+    let separatorString = Homa.Assembler.theSeparator
+    func segments(of reading: String) -> [String] {
+      guard !separatorString.isEmpty else { return reading.isEmpty ? [] : [reading] }
+      return reading.components(separatedBy: separatorString).filter { !$0.isEmpty }
+    }
+    let querySegments = segments(of: headReading)
+    guard !querySegments.isEmpty else { return [] }
+    var results: [(headReading: String, previous: String?, anterior: String?, candidate: String, probability: Double)] =
+      []
+    lock.withLock {
+      for kvPair in mutLRUMap.values {
+        guard let parts = parsePerceptionKey(kvPair.key) else { continue }
+        guard !shouldIgnorePerception(parts) else { continue }
+        let storedSegments = segments(of: parts.headReading)
+        guard storedSegments.count == querySegments.count else { continue }
+        let headMatches = zip(storedSegments, querySegments).allSatisfy {
+          matchMode == .exact ? $0 == $1 : toneStrippedReading($0) == toneStrippedReading($1)
+        }
+        guard headMatches else { continue }
+        let perception = kvPair.perception
+        let isUnigramKey = parts.previous == nil && parts.anterior == nil
+        let isSingleCharUnigram = isUnigramKey && querySegments.count == 1
+        for (candidate, override) in perception.overrides {
+          let overrideScore = calculateWeight(
+            eventCount: override.count,
+            totalCount: perception.count,
+            eventTimestamp: override.timestamp,
+            timestamp: timestamp,
+            isUnigram: isUnigramKey,
+            isSingleCharUnigram: isSingleCharUnigram
+          )
+          guard overrideScore > threshold else { continue }
+          results.append((
+            headReading: parts.headReading,
+            previous: parts.previous?.value,
+            anterior: parts.anterior?.value,
+            candidate: candidate,
+            probability: overrideScore
+          ))
+        }
+      }
+    }
+    return results
   }
 
   nonisolated public func memorizePerception(

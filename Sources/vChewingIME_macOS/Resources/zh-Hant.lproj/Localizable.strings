@@ -2,7 +2,7 @@
 "i18n:aboutWindow.APP_NAME" = "vChewing for macOS";
 "i18n:aboutWindow.BUGREPORT_BUTTON" = "故障提報";
 "i18n:aboutWindow.DEV_CREW" = "唯音 macOS 程式研發：Shiki Suen。\n前代研發協力者 (v1.x)：Isaac Xen 與 Hiraku Wang。\n唯音詞庫維護：Shiki Suen。\nDAG-DP 組句算法實作：Shiki Suen。";
-"i18n:aboutWindow.DISCLAIMER_TEXT" = "補記：1) Homa Compositor (護摩組字引擎)使用 LGPLv3 授權，但對於 Swift 專案中的靜態鏈接之情形有額外准許。2) 唯音輸入法使用了《先鋒語料庫 (Vanguard Corpus)》，該語料庫由多個外部資源資料組成，這些資料的來源在其 GitHub 儲存庫 (`vChewing/libvchewing-data`) 中有列出。先鋒語料庫的資料建置程式藉由 3-Clause BSD 授權釋出。";
+"i18n:aboutWindow.DISCLAIMER_TEXT" = "補記：1) Homa Compositor (護摩組字引擎)使用 LGPLv3 授權，但對於 Swift 專案中的靜態鏈接之情形有額外准許。2) 唯音輸入法使用了《先鋒語料庫 (Vanguard Corpus)》，該語料庫由多個外部資源資料組成，這些資料的來源在其 GitHub 儲存庫 (`vChewing/vChewing-VanguardLexicon`) 中有列出。先鋒語料庫的資料建置程式藉由 3-Clause BSD 授權釋出。";
 "i18n:aboutWindow.DONATION_MESSAGE" = "請考慮對敝專案捐贈。詳情：https://vchewing.github.io";
 "i18n:aboutWindow.LICENSE_TITLE" = "麻理去商標授權合約 (MIT-NTL License):";
 "i18n:aboutWindow.OK_BUTTON" = "確定";
@@ -16,6 +16,7 @@
 "i18n:CandidateServiceMenuEditor.prompt" = "請鍵入您要登記的服務資料。";
 "i18n:CandidateServiceMenuEditor.table.field.MenuTitle" = "選單條目名稱";
 "i18n:CandidateServiceMenuEditor.table.field.Value" = "定義資料值";
+"i18n:CandidateWindow.Tooltip.HoldShiftToSelect" = "摁⇧選字";
 "i18n:ClientManager.AddClient" = "登記新客體";
 "i18n:ClientManager.AddService" = "新增服務";
 "i18n:ClientManager.CompatibilityNote" = "有些客體應用可能會有不同的 IMKTextInput 實作相容問題。";
@@ -110,6 +111,11 @@
 "i18n:InfoMessage.YouMayFollow" = "你可以照這樣:";
 "i18n:InputMode.SwitchToInputMode:%@" = "切換至%@輸入模式";
 "i18n:InputMode.TargetInputModeActivationRequired" = "得啟用對應的「輸入方式」";
+"i18n:KanjiConversionMode.JIS" = "JIS";
+"i18n:KanjiConversionMode.KangXi" = "康熙正體";
+"i18n:KanjiConversionMode.ModernTrad" = "當代繁體中文";
+"i18n:KanjiConversionRevolvement.Notification.Prefix" = "漢字轉換";
+"i18n:KanjiConversionRevolvement.Notification.Suffix.NoConv" = "不轉換";
 "i18n:KeyboardLayout.AlvinLiuImitative" = "劉又銘擬音注音排列";
 "i18n:KeyboardLayout.AppleABC" = "Apple ABC (與 Apple 美規鍵盤等價)";
 "i18n:KeyboardLayout.AppleChewingDachen" = "Apple 大千注音鍵盤佈局";
@@ -177,6 +183,7 @@
 "i18n:NotificationSwitch.Off" = "✘ 已停用";
 "i18n:NotificationSwitch.On" = "✔ 已啟用";
 "i18n:NotificationSwitch.Revolver" = "↺ 切換完畢";
+"i18n:NotificationSwitch.Switched" = "↻ 已切換";
 "i18n:OtherIMEDataImportError.dataExtractionFailure.errMsg" = "「直接匯入」功能失敗：原始檔案不存在或損毀。";
 "i18n:OtherIMEDataImportError.lexiconWritingFailure.errMsg" = "沒能將新的資料成功寫入到使用者自訂語彙辭典當中。";
 "i18n:OtherIMEDataReader.OIDRException.fileNameInsane" = "提供的 URL 檔案名稱不合理，必須包含有效的檔案名稱。";
@@ -213,6 +220,8 @@
 "i18n:PhraseOperation.NerfUserPhraseSucceeded" = "- 成功將該詞音配對降權處理。";
 "i18n:PhraseOperation.PhraseReplacementInterfering" = "⚠︎ 語彙置換功能已啟用，會波及語彙自訂。";
 "i18n:PhraseOperation.UnfilterPhraseSucceeded" = "- 成功將該詞音配對從濾除清單移出。";
+"i18n:PinyinZhuyinTypingMode.Pinyin" = "拼音模式";
+"i18n:PinyinZhuyinTypingMode.Zhuyin" = "注音模式";
 "i18n:securityAgentHelper.warningMessage.footer" = "當這則訊息呈現出來的時候，唯音已經嘗試呼叫 `DisableSecureEventInput()` 來試圖解除這個狀態。以下是唯音建議您採取的行動：\n\n0. 將這則訊息視窗留一份螢幕擷圖、以備接下來的需要。\n\n1. 如果輸入法選單內的唯音仍舊處於無法選取的狀態（下文簡稱「灰色不可用狀態」），則請考慮結束上述執行緒、以迫使其釋放各自的 SecureEventInput 狀態。這將立刻解除唯音的灰色不可用狀態。\n\n2. 如果該執行緒所屬的 App 來自於 Mac App Store 的話，請向 Apple 檢舉其對 SecureEventInput 的濫用。Apple 會在必要的情況下對這類 App 採取措施，比如：臨時下架，直至軟體研發方解決相關故障。\n\n3. 無論該執行緒是否來自於 Mac App Store，也都請您向相關的研發方/提供方提報該故障。您可以將這則訊息的螢幕擷圖給他們看，因為裡面已經包含了用以偵測該故障的必要資訊。\n\n4. 有使用者回報，先關閉相關的執行中應用與服務（尤其是密碼管理工具、基於 macCatalyst 的密碼登入作業、或任何以 Shell 執行的密碼登入作業），再鎖定並解鎖螢幕／目前使用者的桌面工作階段，能夠在一定程度上舒緩目前的狀況。";
 "i18n:securityAgentHelper.warningMessage.header" = "唯音有偵測到下述後檯執行緒有在濫用 SecureEventInput。這種濫用會導致系統內的所有第三方輸入法全都無法正常使用（在輸入法選單內會變成灰色）。\n\n針對需要填寫敏感資料的場合，使用 SecureEventInput 無可厚非。但是，用 EnableSecureEventInput() 開啟該模式之後，就有義務在輸入窗格失焦的那一刻呼叫 DisableSecureEventInput() 來結束這種狀態。這種狀態還常見於後檯輔助 App 當中、或者某個 App 在叫出該模式之後失去回應（這樣的話，哪怕被切換到後檯，SecureEventInput 也不會自動解除）。\n\n被偵測到的執行緒如下:";
 "i18n:securityAgentHelper.warningMessage.title" = "偵測到對 SecureEventInput 的濫用行為";
@@ -250,7 +259,6 @@
 "i18n:Settings.SectionKeyboardShortcuts" = "鍵盤熱鍵:";
 "i18n:Settings.SectionMiscSettings" = "雜項:";
 "i18n:Settings.SectionOutputSettings" = "輸出設定:";
-"i18n:Settings.SectionPhoneticParser" = "注音排列:";
 "i18n:Settings.SectionQuickSetup" = "直接設定:";
 "i18n:Settings.SectionSpace" = "空格鍵:";
 "i18n:Settings.SectionTypingSettings" = "敲字設定:";
@@ -366,7 +374,7 @@
 "i18n:UserDef.kCheckUpdateAutomatically.shortTitle" = "自動檢查軟體更新";
 "i18n:UserDef.kChineseConversionEnabled.shortTitle" = "自動將繁體中文字轉為康熙正體字";
 "i18n:UserDef.kClassicHaninKeyboardSymbolModeShortcutEnabled.shortTitle" = "亦使用「\\」或「¥」鍵啟用漢音鍵盤符號模式";
-"i18n:UserDef.kCNS11643Enabled.shortTitle" = "啟用 CNS11643 全字庫支援 (2026-07-14)";
+"i18n:UserDef.kCNS11643Enabled.shortTitle" = "啟用 CNS11643 全字庫支援 (2026-08-10)";
 "i18n:UserDef.kConsolidateContextOnCandidateSelection.description" = "打比方說，你敲了「章太炎」，你想將「太」改成「泰」。這個操作的作業索引範圍是開閉區間 [1,2)，會切到「章太炎」這個節點的所在索引範圍 [0,3)。如果沒有事前鞏固處理的話，這個詞會在你選字之後變成諸如「張泰言」這種你不想要的自動選字結果。當且僅當你啟用了這個鞏固功能的前提下，你選字之後的結果才會是「章泰炎」這種你想要的結果。";
 "i18n:UserDef.kConsolidateContextOnCandidateSelection.shortTitle" = "在使用選字窗選字時，自動鞏固上下文";
 "i18n:UserDef.kCurrencyNumeralsEnabled.shortTitle" = "啟用貨幣數字輸出";
@@ -397,15 +405,24 @@
 "i18n:UserDef.kForceCassetteChineseConversion.option.2" = "僅在簡體模式轉換至簡體";
 "i18n:UserDef.kForceCassetteChineseConversion.option.3" = "僅在繁體模式轉換至繁體";
 "i18n:UserDef.kForceCassetteChineseConversion.shortTitle" = "繁簡轉換:";
+"i18n:UserDef.kFuriousTypingEnabled.description" = "本開關是為了方便習慣「智能狂拼（ChineseStar）」或「搜狗拼音（Sogou）」連續組句輸入的使用者。僅對拼音輸入（任一拼音排列）生效，對磁帶、逐字選字（SCPC）、內碼、漢音鍵盤符號與羅馬數字等輸入方法不適用。啟用後，連續敲擊拼音字母即可組句，無需逐音節敲聲調或空格鍵確認。注拼槽內尚未完成的拼音會以語言模型試算整句、即時預覽於組字區，尾段候選窗亦同步顯示，可循「Shift+選字鍵」就地選字；預覽期間原始拼音改以提示框顯示（候選窗顯示時自動讓位、避免重疊）。狂拼預覽中按空格會將當前讀音插入組字器（不再兼任候選輪替）；注拼槽尚有未完成拼音時按 Enter 亦僅固化當前讀音（或就地確認高亮候選）並停留於組字狀態，待注拼槽清空後再按 Enter 才遞交整句。";
+"i18n:UserDef.kFuriousTypingEnabled.shortTitle" = "啟用狂拼模式（連續拼音打字）";
+"i18n:UserDef.kPOMAsNGramSourceEnabled.shortTitle" = "以漸退記憶作為組句統計來源";
+"i18n:UserDef.kPOMAsNGramSourceEnabled.description" = "將您透過選字窗選字所累積的漸退記憶（POM）同時作為護摩組字引擎的雙元語法（bigram）統計來源：在相同前後文下，組句路徑會自然優先選取您記憶過的選字結果。此開關預設關閉——關閉時記憶僅在使用者當下選字時以覆寫方式生效；開啟後，記憶亦會以統計方式影響組句，且隨記憶衰減自動淡化。";
 "i18n:UserDef.kHalfWidthPunctuationEnabled.shortTitle" = "啟用半形標點";
 "i18n:UserDef.kHardenVerticalPunctuations.description" = "⚠︎ 該功能當且僅當目前的排版字型不支援縱排標點動態顯示轉義的情況下才有用。一旦使用了，所有敲出去的標點都會被永久轉換為靜態縱排標點：哪怕當前編輯器的排版模式已經改成橫排，這些已經輸入的標點也都還是縱排標點字元。";
 "i18n:UserDef.kHardenVerticalPunctuations.shortTitle" = "在縱排書寫時，強制轉換標點為縱排形式（不推薦）";
 "i18n:UserDef.kInlineDumpPinyinInLieuOfZhuyin.description" = "藉由 Command+Option+Ctrl+Enter 輸出的內容受對應的行為設定所影響。";
 "i18n:UserDef.kInlineDumpPinyinInLieuOfZhuyin.shortTitle" = "Ctrl(+Option)+Command+Enter 輸出漢語拼音而非注音";
 "i18n:UserDef.kIsDebugModeEnabled.shortTitle" = "偵錯模式";
+"i18n:UserDef.kKanjiConversionPreferences.description" = "在當代繁體／康熙／JIS 之間輪替漢字轉換模式。此設定僅對繁體中文輸出模式有效，簡體中文輸出模式下不適用。「當代繁體中文」即為不轉換——輸出維持標準繁體中文，不套用康熙或 JIS 字形。";
+
+"i18n:UserDef.kKanjiConversionPreferences.shortTitle" = "漢字轉換模式:";
 "i18n:UserDef.kKeepReadingUponCompositionError.shortTitle" = "允許對無效的讀音使用 BackSpace 編輯";
-"i18n:UserDef.kKeyboardParser.description" = "請指定普通話/國音分析器所使用的注音排列。此處亦提供各式拼音選項。請注意：在拼音輸入模式下，若目前前後半徑 ±10 的掃描範圍內存在不完全拼寫（比如聲調缺失）的讀音單位，組字引擎可能會套用「最長 4 個讀音」的候選組字上限。當且僅當該 ±10 範圍內所有讀音皆為完整且帶聲調的拼寫時，才不會套用此上限。";
-"i18n:UserDef.kKeyboardParser.shortTitle" = "注音排列:";
+"i18n:UserDef.kKeyboardParser4Pinyin.description" = "指定拼音模式下的拼音輸入種類。在拼音輸入模式下，若目前前後半徑 ±10 的掃描範圍內各讀音單位的可能讀音數乘積（笛卡爾積規模）超過預算（4,000），組字引擎會套用「最長 4 個讀音」的候選組字上限，以免組字過程被笛卡爾積卡死。全拼（帶聲調）輸入、以及笛卡爾積規模在預算之內的輸入（含免聲調的 4 音節以下組合），不會套用此上限。";
+"i18n:UserDef.kKeyboardParser4Pinyin.shortTitle" = "拼音輸入種類:";
+"i18n:UserDef.kKeyboardParser4Zhuyin.description" = "指定注音模式下的注音排列。";
+"i18n:UserDef.kKeyboardParser4Zhuyin.shortTitle" = "注音排列:";
 "i18n:UserDef.kMinCellWidthForHorizontalMatrix.option.0" = "兩個漢字";
 "i18n:UserDef.kMinCellWidthForHorizontalMatrix.option.1" = "兩個繪文字（更寬）";
 "i18n:UserDef.kMinCellWidthForHorizontalMatrix.shortTitle" = "橫向多列選字窗最低單元寬度:";
@@ -422,6 +439,8 @@
 "i18n:UserDef.kPhraseEditorAutoReloadExternalModifications.shortTitle" = "僅限該編輯器：自動讀入來自該編輯器外部的檔案內容修改";
 "i18n:UserDef.kPhraseReplacementEnabled.description" = "這將會對指定的候選字詞進行整詞取代。";
 "i18n:UserDef.kPhraseReplacementEnabled.shortTitle" = "啟用語彙置換表";
+"i18n:UserDef.kPinyinTypingEnabled.description" = "在拼音與注音打字模式之間切換。啟用時使用拼音輸入，停用時使用注音排列。";
+"i18n:UserDef.kPinyinTypingEnabled.shortTitle" = "拼音/注音打字模式";
 "i18n:UserDef.kPopupCompositionBufferTextSize.description" = "調整浮動組字窗的字型大小。";
 "i18n:UserDef.kPopupCompositionBufferTextSize.shortTitle" = "浮動組字窗字號:";
 "i18n:UserDef.kPreferredRevolverForceLevel.description" = "自 v4.5.4 版起引入「弱輪替」保護機制：當您使用鍵盤熱鍵（如 Space/Tab）進行就地輪替時，若目標為多音節候選、且其範圍會覆蓋到「非當前游標位置」且「已被您手動選定」的字詞時，系統將跳過該候選，以防止已選定的內容受到意外影響。此功能特別適合習慣「一個字一個字地選字」的使用者，能確保您在修正後方字詞時，前方已選定的內容依然穩固。此設定不影響選字窗的選字行為。";
@@ -517,7 +536,7 @@
 "i18n:UserDef.kUpperCaseLetterKeyBehavior.option.4" = "直接遞交大寫字母，除非組字區不為空";
 "i18n:UserDef.kUpperCaseLetterKeyBehavior.shortTitle" = "Shift+字母鍵:";
 "i18n:UserDef.kUseDynamicCandidateWindowOrigin.shortTitle" = "根據當前位置的字詞長度，自動調整選字窗的位置";
-"i18n:UserDef.kUseExternalFactoryDict.description" = "這將會優先使用由 libvChewing-Data 的 make install 部署的原廠辭典檔案。";
+"i18n:UserDef.kUseExternalFactoryDict.description" = "這將會優先使用由 vChewing-VanguardLexicon 的 make install 部署的原廠辭典檔案。";
 "i18n:UserDef.kUseExternalFactoryDict.shortTitle" = "盡量使用外置原廠辭典檔案";
 "i18n:UserDef.kUseFixedCandidateOrderOnSelection.description" = "這將阻止漸退記憶模組影響候選字詞的陳列順序。";
 "i18n:UserDef.kUseFixedCandidateOrderOnSelection.shortTitle" = "以固定順序來陳列選字窗內的候選字";
@@ -539,12 +558,15 @@
 "i18n:UserDef.kUseSpaceToCommitHighlightedCandidate4SCPC.description" = "啟用後，在選字窗可見時按空格鍵將確認高亮候選字。僅逐字選字模式（SCPC）下生效。";
 "i18n:UserDef.kUseSpaceToCommitHighlightedCandidate4SCPC.shortTitle" = "在逐字選字模式當中使用空格鍵確認當前高亮候選字";
 "i18n:UserDef.kUsingHotKeyAssociates.shortTitle" = "關聯詞語模式";
-"i18n:UserDef.kUsingHotKeyCassette.shortTitle" = "大寫漢字數字輸出";
+"i18n:UserDef.kUsingHotKeyCassette.shortTitle" = "CIN 磁帶模式";
 "i18n:UserDef.kUsingHotKeyCNS.shortTitle" = "全字庫模式";
-"i18n:UserDef.kUsingHotKeyCurrencyNumerals.shortTitle" = "半形標點模式";
-"i18n:UserDef.kUsingHotKeyHalfWidthASCII.shortTitle" = "JIS 新字體模式";
+"i18n:UserDef.kUsingHotKeyCurrencyNumerals.shortTitle" = "大寫漢字數字輸出";
+"i18n:UserDef.kUsingHotKeyHalfWidthPunctuation.shortTitle" = "半形標點模式";
 "i18n:UserDef.kUsingHotKeyInputMode.shortTitle" = "簡體/繁體中文輸入模式切換";
-"i18n:UserDef.kUsingHotKeyJIS.shortTitle" = "注音反查";
 "i18n:UserDef.kUsingHotKeyKangXi.shortTitle" = "康熙正體字模式";
-"i18n:UserDef.kUsingHotKeyRevLookup.shortTitle" = "CIN 磁帶模式";
+"i18n:UserDef.kUsingHotKeyKanjiConversionMode.longTitle" = "輪替漢字轉換（當代繁體/康熙/JIS）";
+"i18n:UserDef.kUsingHotKeyKanjiConversionMode.shortTitle" = "輪替漢字轉換";
+
+"i18n:UserDef.kUsingHotKeyPinyinZhuyinTypingSwitch.shortTitle" = "拼音/注音打字模式切換";
+"i18n:UserDef.kUsingHotKeyRevLookup.shortTitle" = "注音反查";
 "i18n:UserDef.kUsingHotKeySCPC.shortTitle" = "模擬逐字選字輸入";

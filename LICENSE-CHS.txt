@@ -1,4 +1,4 @@
-补记：1) Homa Compositor (护摩组字引擎) 使用 LGPLv3 授权，但对于 Swift 专案中的静态链接有例外。2) 唯音输入法使用了《先锋语料库 (Vanguard Corpus)》，该语料库由多个外部资源数据组成，这些数据的来源在其 GitHub 储存库 (`vChewing/libvchewing-data`) 中有列出。先锋语料库的资料建置程式借由 3-Clause BSD 授权释出。
+补记：1) Homa Compositor (护摩组字引擎) 使用 LGPLv3 授权，但对于 Swift 专案中的静态链接有例外。2) 唯音输入法使用了《先锋语料库 (Vanguard Corpus)》，该语料库由多个外部资源数据组成，这些数据的来源在其 GitHub 储存库 (`vChewing/vChewing-VanguardLexicon`) 中有列出。先锋语料库的资料建置程式借由 3-Clause BSD 授权释出。
 
 vChewing macOS: MIT-NTL License 麻理（去商标）授权合约
 
@@ -17,8 +17,6 @@ vChewing macOS: MIT-NTL License 麻理（去商标）授权合约
 
 $ 在本专案内也用到了下述第三方模组:
 
-- LineReader: (c) 2019 and onwards Robert Muckle-Jones (Apache 2.0 License).
-- SwiftUI VDKComboBox: (c) 2022 and onwards Bryan Jones (CC BY-SA 4.0)
 - Note that Hotenka Chinese Converter is rewritten by Shiki Suen (using Swift) from Nick Chen's Objective-C library "NCChineseConverter" (MIT License).
 
 [The previous upstream EULA contents have been removed since this project is not including program contents from McBopomofo anymore. You may refer to their EULA contents hosted in their repository (GitHub://OpenVanilla/McBopomofo/). OpenVanilla is both "the name of a FOSS software developer group" and the name of a software developed by them (GitHub://OpenVanilla/OpenVanilla/). The OpenVanilla software (and SpaceChewing, commonly referred as "香草注音") is totally different from McBopomofo and is out-of-topic.]

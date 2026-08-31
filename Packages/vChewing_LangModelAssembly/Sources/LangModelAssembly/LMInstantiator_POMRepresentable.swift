@@ -15,6 +15,7 @@ extension LMAssembly.LMInstantiator {
     timestamp: Double,
     saveCallback: (() -> ())? = nil
   ) {
+    Self.mtxPOMGeneration.value &+= 1
     lxPerceptor.memorizePerception(
       perception,
       timestamp: timestamp,
@@ -25,13 +26,15 @@ extension LMAssembly.LMInstantiator {
   public func fetchPOMSuggestion(
     assembledResult: [Homa.GramInPath],
     cursor: Int,
-    timestamp: Double
+    timestamp: Double,
+    matchMode: LMAssembly.POMQueryMode = .exact
   )
     -> LMAssembly.OverrideSuggestion {
     lxPerceptor.fetchSuggestion(
       assembledResult: assembledResult,
       cursor: cursor,
-      timestamp: timestamp
+      timestamp: timestamp,
+      matchMode: matchMode
     )
   }
 
@@ -43,6 +46,7 @@ extension LMAssembly.LMInstantiator {
   }
 
   public func loadPOMData(fromURL fileURL: URL? = nil) {
+    Self.mtxPOMGeneration.value &+= 1
     lxPerceptor.loadData(fromURL: fileURL)
   }
 
@@ -51,6 +55,7 @@ extension LMAssembly.LMInstantiator {
   }
 
   public func clearPOMData(withURL fileURL: URL? = nil) {
+    Self.mtxPOMGeneration.value &+= 1
     lxPerceptor.clearData(withURL: fileURL)
   }
 
@@ -59,6 +64,7 @@ extension LMAssembly.LMInstantiator {
     targets: [(ngramKey: String, candidate: String)],
     saveCallback: (() -> ())? = nil
   ) {
+    Self.mtxPOMGeneration.value &+= 1
     lxPerceptor.bleachSpecifiedSuggestions(
       targets: targets, saveCallback: saveCallback
     )
@@ -68,6 +74,7 @@ extension LMAssembly.LMInstantiator {
   public func bleachSpecifiedPOMSuggestions(
     targets: [String], saveCallback: (() -> ())? = nil
   ) {
+    Self.mtxPOMGeneration.value &+= 1
     lxPerceptor.bleachSpecifiedSuggestions(
       candidateTargets: targets, saveCallback: saveCallback
     )
@@ -78,12 +85,14 @@ extension LMAssembly.LMInstantiator {
     headReadings: [String],
     saveCallback: (() -> ())? = nil
   ) {
+    Self.mtxPOMGeneration.value &+= 1
     lxPerceptor.bleachSpecifiedSuggestions(
       headReadingTargets: headReadings, saveCallback: saveCallback
     )
   }
 
   public func bleachPOMUnigrams(saveCallback: (() -> ())? = nil) {
+    Self.mtxPOMGeneration.value &+= 1
     lxPerceptor.bleachUnigrams(saveCallback: saveCallback)
   }
 }

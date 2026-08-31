@@ -124,7 +124,14 @@ extension SessionProtocol {
     /// 這裡不判斷 flags 的話，用方向鍵前後定位光標之後，再次試圖觸發組字區時、反而會在首次按鍵時失敗。
     /// 同時注意：必須針對 event.type == .flagsChanged 提前返回結果，
     /// 否則，每次處理這種判斷時都會因為讀取 event.characters? 而觸發 NSInternalInconsistencyException。
-    if event.isFlagChanged { return true }
+    /// 但在這裡需要回傳 false，否則可能會在遠端桌面等場合下無法讓遠端的電腦知道修飾鍵狀態集合有發生變化。
+    ///
+    /// 自 2023 年起這裡曾回傳 true，源於當年誤讀 mozc（Google 日文輸入法）的實作——
+    /// mozc 並不處理 keyup 事件，且相關實作既不適用於唯音、也無助於修飾鍵狀態同步。
+    /// 另有其他輸入法會藉由在此回傳 true 來阻止系統的雙擊空格全形句號替換；但正確的作法應是
+    /// 確認輸入法 Info.plist 未帶 TISDoubleSpaceSubstitution 欄位（不少副廠中文輸入法直接
+    /// 繼承系統注音輸入法的 TIS 屬性而把該欄位一併帶走；此欄位並非必需）。
+    if event.isFlagChanged { return false }
 
     /// 沒有文字輸入客體的話，就不要再往下處理了。
     guard let inputHandler = inputHandler, clientProxy?.hasClient() == true else {
@@ -162,8 +169,9 @@ extension SessionProtocol {
       return handledEmacVIM
     }
 
-    // 在啟用注音排列而非拼音輸入的情況下，強制將當前鍵盤佈局翻譯為美規鍵盤（或指定的其它鍵盤佈局）。
-    if !inputHandler.isComposerUsingPinyin || IMKHelper.isDynamicBasicKeyboardLayoutEnabled {
+    // 在非拼音系模式（注音鍵盤；拼音系含狂拼則不需翻譯）的情況下，強制將當前鍵盤佈局
+    // 翻譯為美規鍵盤（或指定的其它鍵盤佈局）。狂拼為拼音系，由 isPinyinFamilyTypingMode 涵蓋。
+    if !inputHandler.isPinyinFamilyTypingMode || IMKHelper.isDynamicBasicKeyboardLayoutEnabled {
       var defaultLayout = LatinKeyboardMappings(rawValue: prefs.basicKeyboardLayout) ??
         .qwerty
       if let parser = KeyboardParser(rawValue: prefs.keyboardParser) {
@@ -237,6 +245,12 @@ extension SessionProtocol {
 
 extension SessionProtocol {
   private func reinterpreteKeyDownEventAsVIMEmacsKey(event eventToDeal: inout KBEvent) -> Bool? {
+    // 狂拼 copilot 候選窗為唯讀顯示（選取走 Shift+選字鍵），其顯示中若套用
+    // Emacs／JKHL 鍵重詮釋（Ctrl+字母→方向鍵、HL 翻行列），會把字母鍵轉成
+    // 方向鍵、誤觸狂拼「觸發鍵固化」——提早把未完成讀音提交進組字器並開出
+    // 正常選字窗（實測：zh/ch/sh 的第二個 romaji「h」＋JKHL 行為＝打字中
+    // copilot 窗顯示時被轉為 LeftArrow → 固化 → 正常選字窗誤開；P166）。
+    if isFuriousCopilotCandidateWindowVisible { return nil }
     // 使 NSEvent 自翻譯，這樣可以讓 Emacs NSEvent 變成標準 NSEvent。
     if eventToDeal.isEmacsKey {
       // 注意不要針對 Empty 空狀態使用這個轉換，否則會使得相關組合鍵遞交出垃圾字元。

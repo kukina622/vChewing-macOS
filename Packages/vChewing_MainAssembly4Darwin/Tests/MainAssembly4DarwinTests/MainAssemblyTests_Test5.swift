@@ -124,4 +124,117 @@ extension MainAssemblyTests {
     #expect(testClient.toString() == "abc")
     #expect(testSession.state.type == .ofEmpty)
   }
+
+  /// 狂拼 copilot 候選窗的 tooltip：就地選字需 Shift＋選字鍵（IH117C 語義不變），
+  /// 候選窗以專屬 Shift 提示取代「⚡️ 快速候選」（T2）。
+  @Test
+  func test505_FuriousCopilotWindowTooltipShowsShiftHint() throws {
+    let customGrams: [Homa.Gram] = [
+      .init(keyArray: ["ㄕˋ"], value: "世測", score: 9),
+      .init(keyArray: ["ㄐㄧㄝˋ"], value: "界測", score: 8.5),
+      .init(keyArray: ["ㄉㄚˋ"], value: "大測", score: 8),
+      .init(keyArray: ["ㄓㄢˋ"], value: "戰測", score: 8),
+    ]
+    defer {
+      testHandler.currentLM.clearTemporaryData(isFiltering: false)
+      testHandler.prefs.furiousTypingEnabled = false
+      testHandler.prefs.keyboardParser = KeyboardParser.ofStandard.rawValue
+      testHandler.ensureKeyboardParser()
+      testHandler.prefs.fetchSuggestionsFromPerceptionOverrideModel = true
+      testSession.resetInputHandler(forceComposerCleanup: true)
+    }
+    customGrams.forEach {
+      testHandler.currentLM.insertTemporaryData(unigram: $0, isFiltering: false)
+    }
+    testSession.resetInputHandler(forceComposerCleanup: true)
+    testHandler.prefs.keyboardParser = KeyboardParser.ofHanyuPinyin.rawValue
+    testHandler.ensureKeyboardParser()
+    testHandler.prefs.fetchSuggestionsFromPerceptionOverrideModel = false
+    testHandler.prefs.furiousTypingEnabled = true
+    testHandler.currentLM.syncPrefs()
+
+    // 「shijiedaz」：前段自動 chop 提交（世測界測大測），注拼槽暫存「z」。
+    typeSentenceOrCandidates("shijiedaz")
+
+    #expect(testSession.state.type == .ofInputting)
+    #expect(testSession.isFuriousCopilotCandidateWindowVisible)
+    #expect(!testSession.state.candidates.isEmpty)
+    // 專屬 Shift 提示： HoldShiftToSelect（測試環境無 l10n 資源、`.i18n` 回退為原鍵名，故以鍵名斷言）。
+    #expect(testSession.candidateToolTip(shortened: false).contains("HoldShiftToSelect"))
+    // `shortened: true` 的場合無須測試了。
+  }
+
+  /// 康熙轉換的「一對多」攔截與字詞消歧：
+  /// - 單字「才／參／核」直接原樣返回（各具多義，字典不再無條件取單一義項）。
+  /// - 字詞層：常見義項詞（天才／參加／核心）維持原字；罕見義項詞（剛才／人參／核實）
+  ///   仍轉古典字形（剛纔／人蔘／覈實）。
+  /// - 對照組：異體字正寫（為→爲、吃→喫）仍正常轉換、資料庫仍生效。
+  @Test
+  func test506_KangXiConversionKeepsSingleCaiAsIs() throws {
+    // 單字攔截
+    #expect(ChineseConverter.cnvTradToKangXi("才") == "才")
+    #expect(ChineseConverter.cnvTradToKangXi("參") == "參")
+    #expect(ChineseConverter.cnvTradToKangXi("核") == "核")
+    // 字詞層：常見義項維持原字（語料已移除破壞性單字對映）
+    #expect(ChineseConverter.cnvTradToKangXi("天才") == "天才")
+    #expect(ChineseConverter.cnvTradToKangXi("參加") == "參加")
+    #expect(ChineseConverter.cnvTradToKangXi("核心") == "核心")
+    // 字詞層：罕見義項仍轉古典字形（語料補消歧條目）
+    #expect(ChineseConverter.cnvTradToKangXi("剛才") == "剛纔")
+    #expect(ChineseConverter.cnvTradToKangXi("人參") == "人蔘")
+    #expect(ChineseConverter.cnvTradToKangXi("核實") == "覈實")
+    // 對照組：異體字正寫與資料庫仍生效
+    #expect(ChineseConverter.cnvTradToKangXi("為") == "爲")
+    #expect(ChineseConverter.cnvTradToKangXi("吃") == "喫")
+  }
+}
+
+extension MainAssemblyTests {
+  /// 狂拼 copilot 候選窗與 JKHL（VIM 式候選導航）重詮釋的隔離（P166）：
+  /// copilot 窗為唯讀顯示（選取走 Shift+選字鍵），其顯示中 JKHL 不得把字母鍵
+  /// （H/J/K/L）轉為方向鍵——否則 zh/ch/sh 的第二個 romaji「h」會被轉成
+  /// LeftArrow、誤觸狂拼「觸發鍵固化」、提早提交未完成讀音並開出正常選字窗
+  /// （修復前實測：buffer 清空、keys=1、state=ofCandidates）。
+  /// 本測試鎖定縱排與橫排兩種選字窗情境：修復後「h」皆維持字母（buffer「sh」）、
+  /// 組字器零改動、copilot 窗持續可見。
+  @Test
+  func test507_FuriousCopilotWindowIgnoresJKHLReinterpretation() throws {
+    let customGrams: [Homa.Gram] = [
+      .init(keyArray: ["ㄙㄢ"], value: "三測", score: 9),
+      .init(keyArray: ["ㄕˋ"], value: "是測", score: 8.5),
+      .init(keyArray: ["ㄕㄜˋ"], value: "社測", score: 8),
+    ]
+    defer {
+      testHandler.currentLM.clearTemporaryData(isFiltering: false)
+      testHandler.prefs.furiousTypingEnabled = false
+      testHandler.prefs.candidateStateJKHLBehavior = 0
+      testHandler.prefs.useHorizontalCandidateList = true
+      testHandler.prefs.keyboardParser = KeyboardParser.ofStandard.rawValue
+      testHandler.ensureKeyboardParser()
+      testHandler.prefs.fetchSuggestionsFromPerceptionOverrideModel = true
+      testSession.resetInputHandler(forceComposerCleanup: true)
+    }
+    customGrams.forEach {
+      testHandler.currentLM.insertTemporaryData(unigram: $0, isFiltering: false)
+    }
+    testHandler.prefs.furiousTypingEnabled = true
+    testHandler.prefs.candidateStateJKHLBehavior = 1 // JKHL 行為 1：HL 翻行列
+    testHandler.prefs.fetchSuggestionsFromPerceptionOverrideModel = false
+    for isVertical in [false, true] {
+      testSession.resetInputHandler(forceComposerCleanup: true)
+      testHandler.prefs.keyboardParser = KeyboardParser.ofHanyuPinyin.rawValue
+      testHandler.ensureKeyboardParser()
+      testHandler.prefs.useHorizontalCandidateList = !isVertical
+      testHandler.currentLM.syncPrefs()
+      handleKeyEvent(.init(chars: "s"))
+      #expect(testHandler.composer.romajiBuffer == "s")
+      #expect(testSession.isFuriousCopilotCandidateWindowVisible)
+      // 修復前：JKHL 把「h」轉為方向鍵 → 固化 → 正常選字窗誤開。
+      handleKeyEvent(.init(chars: "h", keyCode: 4))
+      #expect(testHandler.composer.romajiBuffer == "sh", "JKHL 不得把字母鍵 h 轉為方向鍵（isVertical=\(isVertical)）")
+      #expect(testHandler.assembler.keys.isEmpty)
+      #expect(testSession.state.type == .ofInputting)
+      #expect(testSession.isFuriousCopilotCandidateWindowVisible)
+    }
+  }
 }

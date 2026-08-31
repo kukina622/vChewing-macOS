@@ -41,7 +41,6 @@ let package = Package(
       name: "LangModelAssembly",
       dependencies: [
         "TrieKit",
-        .product(name: "LineReader", package: "RMJay_LineReader"),
         .product(name: "Homa", package: "vChewing_Homa"),
         // ⚠️ 只能引用 HomaReranker（純 Swift）。同套件的 CharLM 目標相依 Accelerate，
         // 一旦被拉進來就會讓 Typewriter 一線無法在 Linux 編譯。

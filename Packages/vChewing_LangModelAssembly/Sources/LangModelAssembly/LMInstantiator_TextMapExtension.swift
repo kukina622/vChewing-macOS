@@ -273,11 +273,26 @@ extension LMAssembly.LMInstantiator {
     entryType: VanguardTrie.Trie.EntryType
   )
     -> [Homa.Gram] {
+    factoryChoppedUnigramsFor(
+      keyArray: keyArray,
+      entryType: entryType,
+      partiallyMatch: config.partialMatchEnabled
+    )
+  }
+
+  /// 「&」連讀查詢的原廠辭典版本，可指定逐位置前綴語義（與 `partialMatchEnabled` 偏好無關）。
+  /// 供狂拼整詞簡拼查詢（R2-α）使用：簡拼整詞查詢恆為逐位置前綴比對。
+  func factoryChoppedUnigramsFor(
+    keyArray: [String],
+    entryType: VanguardTrie.Trie.EntryType,
+    partiallyMatch: Bool
+  )
+    -> [Homa.Gram] {
     guard let trie = Self.factoryTrie else { return [] }
     let entryGroups = trie.getEntryGroups(
       keysChopped: keyArray,
       filterType: entryType,
-      partiallyMatch: config.partialMatchEnabled
+      partiallyMatch: partiallyMatch
     )
     guard !entryGroups.isEmpty else { return [] }
     return entryGroups.flatMap { group in
@@ -443,7 +458,7 @@ extension LMAssembly.LMInstantiator {
   }
 
   private func makeFactoryUnigrams(
-    queriedGrams: [(keyArray: [String], value: String, probability: Double, previous: String?)],
+    queriedGrams: [(keyArray: [String], value: String, probability: Double, previous: String?, anterior: String?)],
     entryType: VanguardTrie.Trie.EntryType,
     includeHalfWidthVariants: Bool
   )
@@ -462,7 +477,14 @@ extension LMAssembly.LMInstantiator {
         score *= -1
       }
 
-      grams.append(.init(keyArray: queriedGram.keyArray, value: queriedGram.value, score: score))
+      // 攜帶 trie 的 previous／anterior 欄（雙元／三元圖資料）；無資料時維持 nil、行為零變更。
+      grams.append(.init(
+        keyArray: queriedGram.keyArray,
+        value: queriedGram.value,
+        score: score,
+        previous: queriedGram.previous,
+        anterior: queriedGram.anterior
+      ))
 
       let sourceKey = queriedGram.keyArray.joined(separator: "-")
       guard includeHalfWidthVariants, sourceKey.contains("_punctuation") else { continue }

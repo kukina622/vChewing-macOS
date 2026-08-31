@@ -52,6 +52,10 @@ public protocol InputHandlerProtocol: AnyObject {
   var strCodePointBuffer: String { get set } // 內碼輸入專用組碼區
   var calligrapher: String { get set } // 磁帶專用組筆區
   var mixedAlphanumericalBuffer: String { get set } // 混輸暫存 ASCII 緩衝區
+  var furiousTrail: [String] { get set } // 狂拼模式：自動 chop／空格固化提交鍵對應的拼音字母 blob trail
+  var furiousHighlightOverride: CandidateInState? { get set } // 狂拼 copilot 窗高亮候選（當拍消費）
+  var furiousCoSegmentedOffers: [FuriousCoSegmentedOffer] { get set
+  } // 狂拼 copilot 窗聯合重切（P164）的替代切分 offers（furiousTypingFrontCandidates 生成時刷新）
   var composer: Tekkon.Composer { get set } // 注拼槽
   var assembler: Homa.Assembler { get set } // 組字器
 }
@@ -181,6 +185,16 @@ extension InputHandlerProtocol {
 
   public var isComposerUsingPinyin: Bool { composer.isPinyinMode }
 
+  /// 鍵盤佈局翻譯守衛：當前打字模式是否為「拼音系」（拼音鍵盤或狂拼）。
+  ///
+  /// 拼音系（含狂拼）直接接收 ASCII 字母鍵，不需要將鍵盤佈局翻譯為美規鍵盤；
+  /// 狂拼模式必然為拼音系（`isFuriousTypingModeEffective` 內含 `composer.isPinyinMode`
+  /// 條件），故本旗子恆等於 `isComposerUsingPinyin`。此命名把該語義顯式化，
+  /// 避免鍵盤佈局翻譯等外部條件依賴「狂拼是否拼音」的隱式假設而與閘門語義脫鉤。
+  public var isPinyinFamilyTypingMode: Bool {
+    isComposerUsingPinyin || isFuriousTypingModeEffective
+  }
+
   public var moveCursorAfterSelectingCandidate: Bool {
     /// prefs.cursorPlacementAfterSelectingCandidate 的參數說明：
     /// 此設定用來指定候選字在選字窗內被確認後，游標應該位於何處。
@@ -205,6 +219,7 @@ extension InputHandlerProtocol {
     currentLM.purgeInputTokenHashMap()
     currentTypingMethod = .vChewingFactory
     backupCursor = nil
+    invalidateFuriousTrail() // 狀態重置：狂拼 trail 一併失效。
   }
 
   public func removeBackupCursor() {
@@ -245,6 +260,7 @@ extension InputHandlerProtocol {
     skipObservation: Bool = false,
     explicitlyChosen: Bool = false
   ) {
+    invalidateFuriousTrail() // 選字為使用者顯式干涉：狂拼 trail 失效。
     let theCandidate: Homa.CandidatePair = .init(candidate)
     let preservedSentenceBeforeConsolidation = assembler.assembledSentence
     let preservedCursorPosition = actualNodeCursorPosition
@@ -821,10 +837,12 @@ extension InputHandlerProtocol {
     /// 如果這個開關沒打開的話，直接放棄執行這個函式。
     if !prefs.fetchSuggestionsFromPerceptionOverrideModel { return arrResult }
     /// 獲取來自漸退記憶模組的建議結果
+    /// 狂拼模式下以容錯查詢（逐段去聲調等值）取回記憶，使聲調桶／無調形代表鍵不致落空。
     let suggestion = currentLM.fetchPOMSuggestion(
       assembledResult: assembler.assembledSentence,
       cursor: actualNodeCursorPosition,
-      timestamp: Date().timeIntervalSince1970
+      timestamp: Date().timeIntervalSince1970,
+      matchMode: isFuriousTypingModeEffective ? .toneInsensitivePrefix : .exact
     )
     // 以組字器實際返回的候選字詞權重來過濾 POM 建議：
     // 若建議的分數比當前候選的最高權重還低，則忽略以避免覆寫。
@@ -832,6 +850,12 @@ extension InputHandlerProtocol {
     let appendables = filterPOMAppendables(from: suggestion, rawCandidates: rawCandidates)
     arrResult.append(contentsOf: appendables)
     if apply {
+      // S4（P162）：狂拼 n-gram 來源開啟時，自動套用移交統計路徑（雙重加成收斂）——
+      // contextual 記憶已由 DP 以 n-gram 加分自然選中，不再以 override 錨定；
+      // 唯讀提取（arrResult）仍回傳、供候選窗置頂等消費端使用。
+      if isFuriousTypingModeEffective, prefs.pomAsNGramSourceEnabled {
+        return arrResult.stableSort { $0.1.probability > $1.1.probability }
+      }
       if !suggestion.isEmpty, let newestSuggestedCandidate = suggestion.candidates.last {
         let overrideBehavior: Homa.Node.OverrideType = suggestion.forceHighScoreOverride
           ? .withSpecified
@@ -1041,6 +1065,7 @@ extension InputHandlerProtocol {
           let session = session,
           session.clientMitigationLevel >= 2
     else { return "" }
+    invalidateFuriousTrail() // 溢出遞交涉及組字器結構變更：狂拼 trail 失效。
     // 回頭在這裡插上對 Steam 的 Client Identifier 的要求。
     var textToCommit = ""
     while assembler.length > compositorWidthLimit {

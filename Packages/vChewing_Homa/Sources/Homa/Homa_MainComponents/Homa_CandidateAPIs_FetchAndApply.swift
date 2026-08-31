@@ -37,7 +37,7 @@ extension Homa.Assembler {
     anchors.forEach { theAnchor in
       let theNode = theAnchor.node
       theNode.grams.forEach { gram in
-        guard gram.previous == nil else { return } // 不要讓雙元圖的結果出現在選字窗內。
+        guard gram.previous == nil, gram.anterior == nil else { return } // 不要讓雙元圖/三元圖的結果出現在選字窗內。
         switch filter {
         case .all:
           // 得加上這道篩選，不然會出現很多無效結果。
@@ -61,16 +61,18 @@ extension Homa.Assembler {
     }
     // 預先為每個候選字算好排序鍵值，避免 comparator 在每次比較時重新 joined() 出字串
     // （原先每次候選窗開啟都會產生 O(n·log n) 個一次性字串）。
+    // 排序鍵順序：先 segment length（降序）、再 probability（降序）、再 keyArray 字面
+    // （降序）——與 `queryGrams` 的 `sortGram` 語義一致（先權重、後索引鍵字面）。
     let keyed = result.map { candidate in
       (
         segLength: candidate.pair.segLength,
-        joinedKey: candidate.pair.keyArray.joined(separator: "-"),
         weight: candidate.weight,
+        joinedKey: candidate.pair.keyArray.joined(separator: "-"),
         candidate: candidate
       )
     }
     return keyed.sorted {
-      ($0.segLength, $0.joinedKey, $0.weight) > ($1.segLength, $1.joinedKey, $1.weight)
+      ($0.segLength, $0.weight, $0.joinedKey) > ($1.segLength, $1.weight, $1.joinedKey)
     }.map(\.candidate)
   }
 
