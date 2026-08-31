@@ -428,6 +428,15 @@
 "i18n:UserDef.kMinCellWidthForHorizontalMatrix.shortTitle" = "多行横型陳列ウィンドウの候補の最小幅:";
 "i18n:UserDef.kMixedAlphanumericalEnabled.description" = "この機能は、『とあるパソコン会社のインテリ入力』の入力体験に既に慣れているユーザーに向けて設計されています。この機能は現在の注音解析器で扱える ASCII キーは、まず暫定的な注音入力として扱います。入力列が発音可能な読みとして成立しなくなった時点で、raw ASCII にフォールバックします。弁音入力（つまり注音解析器を任意の弁音配列に設定した場合）とカセットモードでは、この機能は利用できません。この機能を有効にしている場合は、辞書設定ページで、入力体験に影響しうる一部の純正辞書の検索結果を除外するかどうかを確認しておくとよいでしょう。半角約物の入力が必要な場合は、半角句読モードをオンにしてください。";
 "i18n:UserDef.kMixedAlphanumericalEnabled.shortTitle" = "中英混在入力のフォールバックを有効化";
+"i18n:UserDef.kAriIMEEnabled.shortTitle" = "Ari IME モードを使用（通常／Ari 切替）";
+"i18n:UserDef.kAriIMEEnabled.description" = "有効にすると、各キーはまず入力どおりに表示され、完全な声調付き音節に辞書結果がある場合のみ中国語へ変換されます。中国語・英語・数字・約物は同じ未確定文字列に残り、Enter だけが全文を確定します。注音配列専用で、弁音およびカセットモードでは使用できません。";
+"i18n:UserDef.kAriFullWidthPunctuationEnabled.shortTitle" = "Ari：全角／中国語約物を既定にする";
+"i18n:UserDef.kAriSpaceCandidateModeEnabled.shortTitle" = "Ari：中国語の後の Space で候補を開く";
+"i18n:UserDef.kAriAutoLearnEnabled.shortTitle" = "Ari：ローカル個人学習を許可";
+"i18n:UserDef.kAriShowStatusLineEnabled.shortTitle" = "Ari：モードと約物状態を表示";
+"i18n:UserDef.kAriShowPendingZhuyinEnabled.shortTitle" = "Ari：組み立て中の注音を表示";
+"i18n:AriIME.CandidateSelectionRestored" = "候補選択を元に戻しました";
+"i18n:AriIME.CandidateForgotten" = "個人候補の記録を削除しました";
 "i18n:UserDef.kNumPadCharInputBehavior.description" = "テンキー文字の入力行為をご指定ください。";
 "i18n:UserDef.kNumPadCharInputBehavior.option.0" = "いつでも半角で直接出力";
 "i18n:UserDef.kNumPadCharInputBehavior.option.1" = "いつでも全角で直接出力";

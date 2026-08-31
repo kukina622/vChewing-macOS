@@ -136,6 +136,11 @@ extension SessionCoreProtocol {
   ) {
     if flushCaches { trieCacheFlushHandler?() }
     guard let inputHandler else { return }
+    // Ari 的 focus reset 必須捨棄未送出的 pre-edit；強制英文旗標由 AriInputBuffer.clear 保留。
+    if !inputHandler.ariBuffer.isEmpty {
+      switchState(.ofAbortion())
+      return
+    }
     guard commitExisting else {
       switchState(.ofEmpty())
       return

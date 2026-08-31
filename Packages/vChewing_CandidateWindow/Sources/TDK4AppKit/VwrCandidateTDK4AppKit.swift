@@ -52,6 +52,7 @@ extension TDK4AppKit {
     weak var target: AnyObject?
     weak var theMenu: NSMenu?
     var clickedCell: CandidateCellData4AppKit = CandidatePool4AppKit.shitCell
+    var pressedCandidate: CandidateInState?
 
     // MARK: - Variables used for rendering the UI.
 
@@ -168,6 +169,7 @@ extension TDK4AppKit.VwrCandidateTDK4AppKit {
 
   override func mouseDown(with event: NSEvent) {
     guard let cellIndex = findCell(from: event) else { return }
+    pressedCandidate = controller?.delegate?.getCandidate(at: cellIndex)
     guard cellIndex != thePool.highlightedIndex else { return }
     thePool.highlight(at: cellIndex)
     thePool.updateMetrics()
@@ -179,8 +181,9 @@ extension TDK4AppKit.VwrCandidateTDK4AppKit {
   }
 
   override func mouseUp(with event: NSEvent) {
+    defer { pressedCandidate = nil }
     guard let cellIndex = findCell(from: event) else { return }
-    didSelectCandidateAt(cellIndex)
+    didSelectCandidateAt(cellIndex, expectedCandidate: pressedCandidate)
   }
 
   override func rightMouseUp(with event: NSEvent) {
@@ -249,8 +252,12 @@ extension TDK4AppKit.VwrCandidateTDK4AppKit {
 // MARK: - Delegate Methods
 
 extension TDK4AppKit.VwrCandidateTDK4AppKit {
-  fileprivate func didSelectCandidateAt(_ pos: Int) {
-    controller?.delegate?.candidatePairSelectionConfirmed(at: pos)
+  fileprivate func didSelectCandidateAt(
+    _ pos: Int, expectedCandidate: CandidateInState?
+  ) {
+    controller?.delegate?.candidatePairSelectionConfirmed(
+      at: pos, expectedCandidate: expectedCandidate
+    )
   }
 
   fileprivate func didTriggerCandidatePairContextMenuActionAt(

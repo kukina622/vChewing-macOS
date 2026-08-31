@@ -488,6 +488,9 @@ extension InputHandlerProtocol {
 
   /// 組字區可以投影成 BPMFVS 顯示，但一般遞交流程只能吃原始內容。
   public func committableDisplayText(sansReading: Bool = false) -> String {
+    if !ariBuffer.isEmpty {
+      return ariBuffer.displayedText
+    }
     let handleAsCodePointInput = currentTypingMethod == .codePoint && !sansReading
     let handleAsRomanNumeralInput = currentTypingMethod == .romanNumerals && !sansReading
     var displayTextSegments: [String] = handleAsCodePointInput || handleAsRomanNumeralInput

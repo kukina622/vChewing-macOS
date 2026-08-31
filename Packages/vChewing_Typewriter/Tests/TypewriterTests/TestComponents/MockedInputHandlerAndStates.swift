@@ -67,6 +67,9 @@ public final class MockInputHandler: @MainActor InputHandlerProtocol {
   public var strCodePointBuffer = ""
   public var calligrapher = ""
   public var mixedAlphanumericalBuffer = ""
+  public var ariBuffer = AriInputBuffer()
+  public var ariPasteboardProvider: (() -> String?)?
+  public var ariSensitiveInputChecker: (() -> Bool)?
   public var furiousTrail = [String]() // 狂拼模式：自動 chop 提交鍵對應的拼音字母 blob trail
   public var furiousHighlightOverride: CandidateInState? // 狂拼 copilot 窗高亮候選（當拍消費）
   public var furiousCoSegmentedOffers = [FuriousCoSegmentedOffer]() // 狂拼 copilot 窗聯合重切（P164）的替代切分 offers
@@ -186,6 +189,10 @@ public final class MockSession: @MainActor SessionCoreProtocol {
   public func candidatePairSelectionConfirmed(at index: Int) {
     guard let inputHandler = inputHandler else { return }
     guard state.isCandidateContainer else { return }
+    if case .candidates = inputHandler.ariBuffer.interactionMode {
+      _ = inputHandler.confirmAriCandidate(at: index)
+      return
+    }
     switch state.type {
     case .ofSymbolTable where (0 ..< state.node.members.count).contains(index):
       let node = state.node.members[index]
@@ -269,6 +276,7 @@ public final class MockSession: @MainActor SessionCoreProtocol {
     }
     switch state.type {
     case .ofCandidates where (0 ..< state.candidates.count).contains(theIndex):
+      if case .candidates = inputHandler.ariBuffer.interactionMode { break }
       inputHandler.previewCurrentCandidateAtCompositionBuffer()
     case .ofSymbolTable where (0 ..< state.node.members.count).contains(theIndex):
       let node = state.node.members[theIndex]
@@ -354,10 +362,15 @@ public final class MockCandidateController: CtlCandidateProtocol {
   public var currentLayout: UILayoutOrientation = .horizontal
   /// 記錄高亮導航（highlightNext/Previous）被呼叫的次數，供測試斷言導航事件。
   public private(set) var highlightNavigationCount = 0
+  public private(set) var lineNavigationCount = 0
 
   public func showNextPage() -> Bool { false }
   public func showPreviousPage() -> Bool { false }
-  public func showNextLine() -> Bool { false }
+  public func showNextLine() -> Bool {
+    lineNavigationCount += 1
+    expanded = true
+    return true
+  }
   public func showPreviousLine() -> Bool { false }
   public func highlightNextCandidate() -> Bool {
     highlightNavigationCount += 1

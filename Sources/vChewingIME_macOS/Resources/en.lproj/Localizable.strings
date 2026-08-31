@@ -428,6 +428,15 @@
 "i18n:UserDef.kMinCellWidthForHorizontalMatrix.shortTitle" = "Minimum cell width for horizontal matrix:";
 "i18n:UserDef.kMixedAlphanumericalEnabled.description" = "This feature is designed for users who are already accustomed to the typing experience offered by a certain Smart Input software from a PC vendor. It treats parser-covered ASCII keys as provisional phonetic input first, then falls back to raw ASCII when the sequence is no longer a pronounceable reading. This feature is unavailable in pinyin typing mode (that is, when the phonabet parser uses any pinyin layout) and in cassette mode. If this typing fallback is enabled, you may also want to check the Dictionary settings page to decide whether to filter out certain factory dictionary query results that could affect your typing experience. If you need half-width punctuation input, please toggle the Half-Width Phuctuation Mode to ON.";
 "i18n:UserDef.kMixedAlphanumericalEnabled.shortTitle" = "Enable mixed Chinese-English typing fallback";
+"i18n:UserDef.kAriIMEEnabled.shortTitle" = "Use Ari IME mode (Normal / Ari toggle)";
+"i18n:UserDef.kAriIMEEnabled.description" = "When enabled, each key first appears literally. A syllable becomes Chinese only after it is complete, toned, and has a dictionary result. Chinese, English, numbers, and punctuation remain in one pre-edit; only Enter commits it. Ari mode is available with Zhuyin keyboards, not pinyin or cassette mode.";
+"i18n:UserDef.kAriFullWidthPunctuationEnabled.shortTitle" = "Ari: Use full-width / Chinese punctuation by default";
+"i18n:UserDef.kAriSpaceCandidateModeEnabled.shortTitle" = "Ari: Open candidates with Space after Chinese";
+"i18n:UserDef.kAriAutoLearnEnabled.shortTitle" = "Ari: Allow local personal learning";
+"i18n:UserDef.kAriShowStatusLineEnabled.shortTitle" = "Ari: Show mode and punctuation status";
+"i18n:UserDef.kAriShowPendingZhuyinEnabled.shortTitle" = "Ari: Show pending Zhuyin hint";
+"i18n:AriIME.CandidateSelectionRestored" = "Candidate selection restored";
+"i18n:AriIME.CandidateForgotten" = "Personal candidate record forgotten";
 "i18n:UserDef.kNumPadCharInputBehavior.description" = "Choose the behavior of numeric pad inputs.";
 "i18n:UserDef.kNumPadCharInputBehavior.option.0" = "Always directly commit half-width chars";
 "i18n:UserDef.kNumPadCharInputBehavior.option.1" = "Always directly commit full-width chars";

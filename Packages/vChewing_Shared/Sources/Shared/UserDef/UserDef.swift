@@ -54,6 +54,12 @@ nonisolated public enum UserDef: String, CaseIterable, Identifiable, Sendable {
   case kSpaceKeyBehaviorAgainstICB = "SpaceKeyBehaviorAgainstICB"
   case kCassetteEnabled = "CassetteEnabled"
   case kMixedAlphanumericalEnabled = "MixedAlphanumericalEnabled"
+  case kAriIMEEnabled = "AriIMEEnabled"
+  case kAriFullWidthPunctuationEnabled = "AriFullWidthPunctuationEnabled"
+  case kAriSpaceCandidateModeEnabled = "AriSpaceCandidateModeEnabled"
+  case kAriAutoLearnEnabled = "AriAutoLearnEnabled"
+  case kAriShowStatusLineEnabled = "AriShowStatusLineEnabled"
+  case kAriShowPendingZhuyinEnabled = "AriShowPendingZhuyinEnabled"
   case kFuriousTypingEnabled = "FuriousTypingEnabled"
   case kPOMAsNGramSourceEnabled = "POMAsNGramSourceEnabled"
   case kCNS11643Enabled = "CNS11643Enabled"
@@ -474,6 +480,12 @@ nonisolated extension UserDef {
     case .kSpaceKeyBehaviorAgainstICB: return .integer(1)
     case .kCassetteEnabled: return .bool(false)
     case .kMixedAlphanumericalEnabled: return .bool(false)
+    case .kAriIMEEnabled: return .bool(false)
+    case .kAriFullWidthPunctuationEnabled: return .bool(false)
+    case .kAriSpaceCandidateModeEnabled: return .bool(false)
+    case .kAriAutoLearnEnabled: return .bool(true)
+    case .kAriShowStatusLineEnabled: return .bool(false)
+    case .kAriShowPendingZhuyinEnabled: return .bool(false)
     case .kFuriousTypingEnabled: return .bool(true)
     case .kPOMAsNGramSourceEnabled: return .bool(false)
     case .kCNS11643Enabled: return .bool(false)
@@ -760,6 +772,31 @@ nonisolated extension UserDef {
         userDef: self,
         shortTitle: "i18n:UserDef.kMixedAlphanumericalEnabled.shortTitle",
         description: "i18n:UserDef.kMixedAlphanumericalEnabled.description"
+      )
+    case .kAriIMEEnabled: return .init(
+        userDef: self,
+        shortTitle: "i18n:UserDef.kAriIMEEnabled.shortTitle",
+        description: "i18n:UserDef.kAriIMEEnabled.description"
+      )
+    case .kAriFullWidthPunctuationEnabled: return .init(
+        userDef: self,
+        shortTitle: "i18n:UserDef.kAriFullWidthPunctuationEnabled.shortTitle"
+      )
+    case .kAriSpaceCandidateModeEnabled: return .init(
+        userDef: self,
+        shortTitle: "i18n:UserDef.kAriSpaceCandidateModeEnabled.shortTitle"
+      )
+    case .kAriAutoLearnEnabled: return .init(
+        userDef: self,
+        shortTitle: "i18n:UserDef.kAriAutoLearnEnabled.shortTitle"
+      )
+    case .kAriShowStatusLineEnabled: return .init(
+        userDef: self,
+        shortTitle: "i18n:UserDef.kAriShowStatusLineEnabled.shortTitle"
+      )
+    case .kAriShowPendingZhuyinEnabled: return .init(
+        userDef: self,
+        shortTitle: "i18n:UserDef.kAriShowPendingZhuyinEnabled.shortTitle"
       )
     case .kFuriousTypingEnabled: return .init(
         userDef: self, shortTitle: "i18n:UserDef.kFuriousTypingEnabled.shortTitle",

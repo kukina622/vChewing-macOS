@@ -57,6 +57,7 @@ extension GSI4AppKit {
     weak var target: AnyObject?
     weak var theMenu: NSMenu?
     var clickedCell: CandidateCellData4AppKit = CandidatePool4AppKit.shitCell
+    var pressedCandidate: CandidateInState?
 
     // MARK: Private
 
@@ -540,6 +541,7 @@ extension GSI4AppKit.VwrCandidateGSI4AppKit {
   }
 
   override func mouseDown(with event: NSEvent) {
+    pressedCandidate = nil
     var clickPoint = convert(event.locationInWindow, to: self)
     clickPoint.y = bounds.height - clickPoint.y
 
@@ -562,6 +564,7 @@ extension GSI4AppKit.VwrCandidateGSI4AppKit {
       window?.performDrag(with: event)
       return
     }
+    pressedCandidate = controller?.delegate?.getCandidate(at: cellIndex)
     guard cellIndex != thePool.highlightedIndex else { return }
     thePool.highlight(at: cellIndex)
     if rendersInScrollMode {
@@ -595,6 +598,7 @@ extension GSI4AppKit.VwrCandidateGSI4AppKit {
   }
 
   override func mouseUp(with event: NSEvent) {
+    defer { pressedCandidate = nil }
     guard !isDraggingWindow else {
       isDraggingWindow = false
       return
@@ -606,7 +610,7 @@ extension GSI4AppKit.VwrCandidateGSI4AppKit {
       return
     }
     guard let cellIndex = findCell(from: event) else { return }
-    didSelectCandidateAt(cellIndex)
+    didSelectCandidateAt(cellIndex, expectedCandidate: pressedCandidate)
   }
 
   override func rightMouseUp(with event: NSEvent) {
@@ -737,8 +741,12 @@ extension GSI4AppKit.VwrCandidateGSI4AppKit {
 // MARK: - Delegate Methods.
 
 extension GSI4AppKit.VwrCandidateGSI4AppKit {
-  fileprivate func didSelectCandidateAt(_ pos: Int) {
-    controller?.delegate?.candidatePairSelectionConfirmed(at: pos)
+  fileprivate func didSelectCandidateAt(
+    _ pos: Int, expectedCandidate: CandidateInState?
+  ) {
+    controller?.delegate?.candidatePairSelectionConfirmed(
+      at: pos, expectedCandidate: expectedCandidate
+    )
   }
 
   fileprivate func didTriggerCandidatePairContextMenuActionAt(

@@ -94,6 +94,32 @@ extension SettingsPanesCocoa {
           }
           NSTabView.TabPage(title: "Ｃ") {
             NSStackView.buildSection(width: innerContentWidth) {
+              UserDef.kAriIMEEnabled.renderCocoa(
+                fixWidth: innerContentWidth,
+                prefUITab: .tabBehavior
+              )
+              UserDef.kAriFullWidthPunctuationEnabled.renderCocoa(
+                fixWidth: innerContentWidth,
+                prefUITab: .tabBehavior
+              )
+              UserDef.kAriSpaceCandidateModeEnabled.renderCocoa(
+                fixWidth: innerContentWidth,
+                prefUITab: .tabBehavior
+              )
+              UserDef.kAriAutoLearnEnabled.renderCocoa(
+                fixWidth: innerContentWidth,
+                prefUITab: .tabBehavior
+              )
+              UserDef.kAriShowStatusLineEnabled.renderCocoa(
+                fixWidth: innerContentWidth,
+                prefUITab: .tabBehavior
+              )
+              UserDef.kAriShowPendingZhuyinEnabled.renderCocoa(
+                fixWidth: innerContentWidth,
+                prefUITab: .tabBehavior
+              )
+            }?.boxed()
+            NSStackView.buildSection(width: innerContentWidth) {
               UserDef.kMixedAlphanumericalEnabled.renderCocoa(
                 fixWidth: innerContentWidth,
                 prefUITab: .tabBehavior

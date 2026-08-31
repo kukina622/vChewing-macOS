@@ -27,6 +27,20 @@ public struct VwrSettingsPaneBehavior: View {
       }
 
       Section {
+        UserDef.kAriIMEEnabled.renderUI()
+        UserDef.kAriFullWidthPunctuationEnabled.renderUI()
+          .disabled(!PrefMgr.shared.ariIMEEnabled)
+        UserDef.kAriSpaceCandidateModeEnabled.renderUI()
+          .disabled(!PrefMgr.shared.ariIMEEnabled)
+        UserDef.kAriAutoLearnEnabled.renderUI()
+          .disabled(!PrefMgr.shared.ariIMEEnabled)
+        UserDef.kAriShowStatusLineEnabled.renderUI()
+          .disabled(!PrefMgr.shared.ariIMEEnabled)
+        UserDef.kAriShowPendingZhuyinEnabled.renderUI()
+          .disabled(!PrefMgr.shared.ariIMEEnabled)
+      }
+
+      Section {
         UserDef.kMixedAlphanumericalEnabled.renderUI()
       }
 

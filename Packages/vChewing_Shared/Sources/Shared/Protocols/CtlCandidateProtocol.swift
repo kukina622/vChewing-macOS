@@ -16,6 +16,7 @@ public protocol CtlCandidateDelegate: AnyObject {
   func callError(_: String)
   func getCandidate(at: Int) -> CandidateInState?
   func candidatePairSelectionConfirmed(at index: Int)
+  func candidatePairSelectionConfirmed(at index: Int, expectedCandidate: CandidateInState?)
   func candidatePairHighlightChanged(at index: Int?)
   func candidatePairContextMenuActionTriggered(
     at index: Int, action: CandidateContextMenuAction
@@ -38,6 +39,19 @@ public protocol CtlCandidateDelegate: AnyObject {
   var isCandidateContextMenuEnabled: Bool { get }
   var showReverseLookupResult: Bool { get }
   var clientAccentColor: HSBA? { get }
+}
+
+extension CtlCandidateDelegate {
+  /// 鼠標 callback 可能晚於候選頁面更新才送達。只有 index 與按下當時的
+  /// 候選仍與當前內容一致時才允許確認，避免同一槽位已換頁後選錯字。
+  public func candidatePairSelectionConfirmed(
+    at index: Int, expectedCandidate: CandidateInState?
+  ) {
+    guard let expectedCandidate, let currentCandidate = getCandidate(at: index) else { return }
+    guard expectedCandidate.keyArray == currentCandidate.keyArray,
+          expectedCandidate.value == currentCandidate.value else { return }
+    candidatePairSelectionConfirmed(at: index)
+  }
 }
 
 // MARK: - CtlCandidateProtocol

@@ -52,6 +52,9 @@ public protocol InputHandlerProtocol: AnyObject {
   var strCodePointBuffer: String { get set } // 內碼輸入專用組碼區
   var calligrapher: String { get set } // 磁帶專用組筆區
   var mixedAlphanumericalBuffer: String { get set } // 混輸暫存 ASCII 緩衝區
+  var ariBuffer: AriInputBuffer { get set } // Ari 模式整段組字資料
+  var ariPasteboardProvider: (() -> String?)? { get set } // 平台剪貼簿注入點
+  var ariSensitiveInputChecker: (() -> Bool)? { get set } // 平台敏感欄位注入點
   var furiousTrail: [String] { get set } // 狂拼模式：自動 chop／空格固化提交鍵對應的拼音字母 blob trail
   var furiousHighlightOverride: CandidateInState? { get set } // 狂拼 copilot 窗高亮候選（當拍消費）
   var furiousCoSegmentedOffers: [FuriousCoSegmentedOffer] { get set
@@ -214,6 +217,7 @@ extension InputHandlerProtocol {
   public var keySeparator: String { assembler.separator }
 
   public func clear() {
+    ariBuffer.clear()
     clearComposerAndCalligrapher()
     assembler.clear()
     currentLM.purgeInputTokenHashMap()
@@ -463,7 +467,8 @@ extension InputHandlerProtocol {
 
   /// 警告：該參數僅代指組音區/組筆區域與組字區在目前狀態下被視為「空」。
   public var isConsideredEmptyForNow: Bool {
-    switch currentTypingMethod {
+    if !ariBuffer.isEmpty { return false }
+    return switch currentTypingMethod {
     case .haninKeyboardSymbol:
       true
     case .codePoint, .romanNumerals:
@@ -506,6 +511,7 @@ extension InputHandlerProtocol {
   // MARK: - Extracted methods and functions (Tekkon).
 
   var isComposerOrCalligrapherEmpty: Bool {
+    if !ariBuffer.isEmpty { return false }
     if !strCodePointBuffer.isEmpty { return false }
     if !mixedAlphanumericalBuffer.isEmpty { return false }
     return prefs.cassetteEnabled ? calligrapher.isEmpty : composer.isEmpty

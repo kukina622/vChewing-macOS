@@ -347,6 +347,24 @@ public final class PrefMgr: PrefMgrProtocol, Sendable {
   @AppProperty(userDef: .kMixedAlphanumericalEnabled)
   public var mixedAlphanumericalEnabled: Bool
 
+  @AppProperty(userDef: .kAriIMEEnabled)
+  public var ariIMEEnabled: Bool
+
+  @AppProperty(userDef: .kAriFullWidthPunctuationEnabled)
+  public var ariFullWidthPunctuationEnabled: Bool
+
+  @AppProperty(userDef: .kAriSpaceCandidateModeEnabled)
+  public var ariSpaceCandidateModeEnabled: Bool
+
+  @AppProperty(userDef: .kAriAutoLearnEnabled)
+  public var ariAutoLearnEnabled: Bool
+
+  @AppProperty(userDef: .kAriShowStatusLineEnabled)
+  public var ariShowStatusLineEnabled: Bool
+
+  @AppProperty(userDef: .kAriShowPendingZhuyinEnabled)
+  public var ariShowPendingZhuyinEnabled: Bool
+
   @AppProperty(userDef: .kFuriousTypingEnabled)
   public var furiousTypingEnabled: Bool
 

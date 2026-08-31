@@ -428,6 +428,15 @@
 "i18n:UserDef.kMinCellWidthForHorizontalMatrix.shortTitle" = "橫向多列選字窗最低單元寬度:";
 "i18n:UserDef.kMixedAlphanumericalEnabled.description" = "該功能專為已適應某電腦廠牌輸入法打字體驗的使用者設計。該功能會優先將目前注音排列可覆蓋的 ASCII 按鍵暫時視為注音輸入；當整段序列不再構成可發音讀音時，再回退為原始 ASCII。若使用拼音輸入（也就是注音排列設為任一拼音排列）或磁帶模式，則該功能不可用。若已啟用該功能，您可能需要到辭典設定頁確認是否要篩除某些可能影響打字體驗的原廠辞典查詢結果。若有半形標點輸入需求，請開啟半形標點模式。";
 "i18n:UserDef.kMixedAlphanumericalEnabled.shortTitle" = "啟用中英混合輸入回退";
+"i18n:UserDef.kAriIMEEnabled.shortTitle" = "使用 Ari IME 模式（普通／Ari 模式切換）";
+"i18n:UserDef.kAriIMEEnabled.description" = "啟用後，每個按鍵會先顯示原始字元；只有完整、有聲調且查得到漢字的注音才轉為中文。中英數字與標點會保留在同一段組字區，只有 Enter 會送出整段內容。此模式僅適用於注音鍵盤，不適用於拼音或磁帶模式。";
+"i18n:UserDef.kAriFullWidthPunctuationEnabled.shortTitle" = "Ari：預設使用全形／中文標點";
+"i18n:UserDef.kAriSpaceCandidateModeEnabled.shortTitle" = "Ari：中文後按空白鍵開啟候選";
+"i18n:UserDef.kAriAutoLearnEnabled.shortTitle" = "Ari：允許本機個人學習";
+"i18n:UserDef.kAriShowStatusLineEnabled.shortTitle" = "Ari：顯示模式與標點狀態";
+"i18n:UserDef.kAriShowPendingZhuyinEnabled.shortTitle" = "Ari：顯示待組注音提示";
+"i18n:AriIME.CandidateSelectionRestored" = "已復原選字";
+"i18n:AriIME.CandidateForgotten" = "已忘記個人候選紀錄";
 "i18n:UserDef.kNumPadCharInputBehavior.description" = "指定數字小鍵盤的輸入行為。";
 "i18n:UserDef.kNumPadCharInputBehavior.option.0" = "始終以半形文字直接遞交";
 "i18n:UserDef.kNumPadCharInputBehavior.option.1" = "始終以全形文字直接遞交";

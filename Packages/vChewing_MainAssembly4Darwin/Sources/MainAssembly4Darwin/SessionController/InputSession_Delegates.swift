@@ -254,6 +254,9 @@ extension SessionProtocol {
     }
     switch state.type {
     case .ofCandidates where (0 ..< state.candidates.count).contains(theIndex):
+      // Ari 的候選資料與一般 Homa assembler 相互獨立；不可用一般候選預覽覆寫
+      // Ari 的 displayTextSegments，否則候選窗初次高亮時整段 marked text 會暫時消失。
+      if case .candidates = inputHandler.ariBuffer.interactionMode { break }
       inputHandler.previewCurrentCandidateAtCompositionBuffer()
     case .ofSymbolTable where (0 ..< state.node.members.count).contains(theIndex):
       let node = state.node.members[theIndex]
@@ -280,6 +283,10 @@ extension SessionProtocol {
   public func candidatePairSelectionConfirmed(at index: Int) {
     guard let inputHandler = inputHandler else { return }
     guard state.isCandidateContainer else { return }
+    if case .candidates = inputHandler.ariBuffer.interactionMode {
+      _ = inputHandler.confirmAriCandidate(at: index)
+      return
+    }
     switch state.type {
     case .ofSymbolTable where (0 ..< state.node.members.count).contains(index):
       let node = state.node.members[index]

@@ -92,6 +92,12 @@ public protocol PrefMgrProtocol {
   var cns11643Enabled: Bool { get set }
   var cassetteEnabled: Bool { get set }
   var mixedAlphanumericalEnabled: Bool { get set }
+  var ariIMEEnabled: Bool { get set }
+  var ariFullWidthPunctuationEnabled: Bool { get set }
+  var ariSpaceCandidateModeEnabled: Bool { get set }
+  var ariAutoLearnEnabled: Bool { get set }
+  var ariShowStatusLineEnabled: Bool { get set }
+  var ariShowPendingZhuyinEnabled: Bool { get set }
   var furiousTypingEnabled: Bool { get set }
   var pomAsNGramSourceEnabled: Bool { get set }
   var symbolInputEnabled: Bool { get set }

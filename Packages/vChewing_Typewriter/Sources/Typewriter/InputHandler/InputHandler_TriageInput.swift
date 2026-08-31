@@ -17,6 +17,25 @@ extension InputHandlerProtocol {
     var state: State { session.state }
     currentLM.syncPrefs()
 
+    // 設定視窗可在 composition 期間切換模式。切換邊界先送出畫面上既有內容，避免
+    // Ari buffer 與普通 assembler 互相遺留成無法操作的 marked text。
+    let ariModeEffective = prefs.ariIMEEnabled && currentTypingMethod == .vChewingFactory
+      && !prefs.cassetteEnabled && !composer.isPinyinMode
+    if !ariModeEffective, !ariBuffer.isEmpty {
+      let text = ariBuffer.displayedText
+      session.switchState(.ofCommitting(textToCommit: text))
+      return triageInput(event: input)
+    }
+    // Ari 是整段 Enter-only composition；必須在普通 FSM 及任何自動 commit 邏輯之前接管。
+    if ariModeEffective {
+      if ariBuffer.isEmpty,
+         !assembler.isEmpty || !composer.isEmpty || !mixedAlphanumericalBuffer.isEmpty {
+        let text = committableDisplayText()
+        session.switchState(.ofCommitting(textToCommit: text))
+      }
+      return handleAriInput(event: input)
+    }
+
     // 狂拼固化：前方候選窗顯示中、按下「可能叫出選字窗」的鍵（Space／翻頁／候選導航
     // 方向鍵）時，先把前方投機讀音固化進組字器（投機→實體：只插聲調桶、不覆寫，
     // trail 累積供重切分），再讓同一事件繼續走正常流程——正常流程自動開出正常選字窗
