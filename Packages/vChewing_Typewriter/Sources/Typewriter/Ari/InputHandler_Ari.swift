@@ -54,7 +54,9 @@ extension InputHandlerProtocol {
     }
 
     // 剪貼簿內容以完成的 literal cells 插入，不再交給注音解析器。
-    let isStandardPaste = (input.isControlHeld != input.isCommandHeld)
+    // macOS 的 Command+V 必須交還宿主。若 Ari 也從 pasteboard 插入，部分 client
+    // 仍會執行選單的 Paste action，造成 marked text 與 client 各貼一次。
+    let isStandardPaste = input.isControlHeld && !input.isCommandHeld
       && !input.isOptionHeld && input.text.lowercased() == "v"
     let isInsertPaste = input.isShiftHeld && !input.isControlHeld
       && !input.isOptionHeld && !input.isCommandHeld
@@ -188,6 +190,7 @@ extension InputHandlerProtocol {
     }
 
     if isPunctuation, !isPhoneticKey {
+      let shouldContinueEnglishTail = ariBuffer.isInEnglishTail
       ariBuffer.flushPendingAsLiteral()
       let baseKey = ariPhysicalPunctuationKey(
         visible: visible, ignoringModifiers: input.inputTextIgnoringModifiers
@@ -195,7 +198,7 @@ extension InputHandlerProtocol {
       let punctuation = prefs.ariFullWidthPunctuationEnabled
         ? ariChinesePunctuation(for: visible) : visible
       ariBuffer.insertLiteral(punctuation, punctuationKey: baseKey)
-      ariBuffer.isInEnglishTail = false
+      ariBuffer.isInEnglishTail = shouldContinueEnglishTail
       session.switchState(generateAriInputtingState())
       return true
     }
@@ -307,6 +310,9 @@ extension InputHandlerProtocol {
     if ![.ofDachen26, .ofETen26, .ofHsu, .ofStarlight, .ofAlvinLiu].contains(trial.parser),
        occupied != proposed.count { return false }
     ariBuffer.pendingKeys = proposed
+    // Ari 切分特例 1（精確 token）：架構名稱本身也能碰巧構成大千音節；
+    // 先保留到下一鍵，讓後續 slot 衝突自然把它送入英文尾段。
+    if ["x86", "x64", "arm64"].contains(proposed.lowercased()) { return true }
     if trial.hasIntonation(), trial.isPronounceable,
        let reading = trial.phonabetKeyForQuery(pronounceableOnly: true),
        !ariChineseGrams(for: reading).isEmpty {
@@ -363,7 +369,13 @@ extension InputHandlerProtocol {
     ariBuffer.cells.insert(cell, at: min(max(ariBuffer.cursor, 0), ariBuffer.cells.count))
     ariBuffer.cursor += 1
     ariBuffer.isInEnglishTail = false
-    reassembleAriChineseRun(containing: ariBuffer.cursor - 1)
+    let repairedIndex = repairAriLeadingChineseBoundaryIfPossible(
+      containing: ariBuffer.cursor - 1
+    )
+    let retokenizedIndex = retokenizeAriProtectedIdentifierBoundaryIfPossible(
+      containing: repairedIndex
+    )
+    reassembleAriChineseRun(containing: retokenizedIndex)
   }
 
   private func convertAriLiteralTailIfPossible() -> Bool {
@@ -371,11 +383,13 @@ extension InputHandlerProtocol {
     guard runStart < ariBuffer.cursor else { return false }
     let literalRun = ariBuffer.cells[runStart ..< ariBuffer.cursor].map(\.text).joined()
     let technicalProbe = literalRun.last == " " ? String(literalRun.dropLast()) : literalRun
-    // URL、email、檔名與路徑尾端偏向字面值。
+    if convertAriLiteralPhraseTailIfPossible(runStart: runStart) { return true }
+    // 通用格式保護（不是單一輸入特例）：URL、email、檔名與路徑尾端偏向字面值。
+    // 若尾端已累積出有聲母開頭的完整詞，
+    // 仍可依詞庫證據切出中文，例如 `acerg.3ru `（acer手機）。
     let literalBoundaryIsTechnical = runStart > 0
-      && ["@", "/", "\\", "."].contains(ariBuffer.cells[runStart - 1].text)
-    if literalBoundaryIsTechnical || technicalProbe.contains("://") || technicalProbe.contains("@")
-      || technicalProbe.range(of: #"(?:^|[/\\])[^ ]+\.[A-Za-z0-9]+$"#, options: .regularExpression) != nil {
+      && ["@", "/", "\\", ".", ":"].contains(ariBuffer.cells[runStart - 1].text)
+    if literalBoundaryIsTechnical || ariLiteralRunLooksTechnical(technicalProbe) {
       return false
     }
     let maxLength = min(5, ariBuffer.cursor - runStart)
@@ -395,6 +409,239 @@ extension InputHandlerProtocol {
       insertAriChinese(reading: reading, typedKeys: typed)
       return true
     }
+    return false
+  }
+
+  /// 第一個音節完成時資訊不足，會先採「最短 suffix」保留英文；第二個中文字出現後，
+  /// 再用完整詞命中修復邊界。例如 `acercj86gj3` 會先暫成 `acerc娃`，待 `gj3`
+  /// 出現並命中「滑鼠」後，把前一個 `c` 收回第一音節，改為 `cj86`。
+  private func repairAriLeadingChineseBoundaryIfPossible(containing index: Int) -> Int {
+    guard ariBuffer.cells.indices.contains(index), ariBuffer.cells[index].isChinese else { return index }
+    let run = ariChineseRun(containing: index)
+    guard run.count >= 2, run.lowerBound > 0 else { return index }
+    let firstIndex = run.lowerBound
+    let priorIndex = firstIndex - 1
+    let priorCell = ariBuffer.cells[priorIndex]
+    let firstCell = ariBuffer.cells[firstIndex]
+    guard !priorCell.isChinese, priorCell.punctuationKey == nil,
+          priorCell.text.count == 1, !firstCell.typedKeys.isEmpty,
+          let priorComposer = ariComposer(for: priorCell.text),
+          !priorComposer.consonant.value.isEmpty,
+          priorComposer.semivowel.value.isEmpty, priorComposer.vowel.value.isEmpty,
+          let originalComposer = ariComposer(for: firstCell.typedKeys),
+          originalComposer.consonant.value.isEmpty,
+          let alternative = ariComposer(for: priorCell.text + firstCell.typedKeys),
+          alternative.isPronounceable,
+          let alternativeReading = alternative.phonabetKeyForQuery(pronounceableOnly: true),
+          !ariChineseGrams(for: alternativeReading).isEmpty else { return index }
+
+    var readings = ariBuffer.cells[run].compactMap(\.reading)
+    guard readings.count == run.count else { return index }
+    let originalPhraseScore = ariBestWholePhraseScore(for: readings)
+    readings[0] = alternativeReading
+    let alternativePhraseScore = ariBestWholePhraseScore(for: readings)
+    let literalStart = ariLiteralRunStart(before: firstIndex)
+    let literalPrefix = ariBuffer.cells[literalStart ..< firstIndex].map(\.text).joined()
+    guard let alternativePhraseScore else { return index }
+    let alternativeClearlyWins = originalPhraseScore.map {
+      alternativePhraseScore > $0 + 0.5
+    } ?? true
+    guard alternativeClearlyWins || ariLiteralPrefixLooksDangling(literalPrefix) else { return index }
+
+    ariBuffer.cells.remove(at: priorIndex)
+    ariBuffer.cursor = max(0, ariBuffer.cursor - 1)
+    let repairedFirstIndex = firstIndex - 1
+    ariBuffer.cells[repairedFirstIndex].reading = alternativeReading
+    ariBuffer.cells[repairedFirstIndex].typedKeys = priorCell.text + firstCell.typedKeys
+    return max(0, index - 1)
+  }
+
+  private func ariBestWholePhraseScore(for readings: [String]) -> Double? {
+    currentLM.unigramsFor(keyArray: readings).lazy
+      .filter { gram in
+        gram.keyArray.count == readings.count && gram.current.count == readings.count
+      }
+      .map(\.probability).max()
+  }
+
+  /// 已被過早切入中文的技術識別字仍可在整詞完成後復原邊界。例如 `x86` 與
+  /// `user123` 的數字鍵都能構成大千注音；等「處理器／帳號」有完整詞證據後，
+  /// 將誤收的按鍵退回 literal prefix，再依正確音節重建中文 run。
+  private func retokenizeAriProtectedIdentifierBoundaryIfPossible(
+    containing index: Int
+  ) -> Int {
+    guard ariBuffer.cells.indices.contains(index), ariBuffer.cells[index].isChinese else { return index }
+    let run = ariChineseRun(containing: index)
+    guard run.count >= 2, run.lowerBound > 0 else { return index }
+    let literalStart = ariLiteralRunStart(before: run.lowerBound)
+    guard literalStart < run.lowerBound else { return index }
+
+    let literalRaw = ariBuffer.cells[literalStart ..< run.lowerBound].map(\.text).joined()
+    let chineseRaw = ariBuffer.cells[run].map(\.typedKeys).joined()
+    let combined = Array(literalRaw + chineseRaw)
+    let originalBoundary = literalRaw.count
+    guard combined.count - originalBoundary >= 4 else { return index }
+
+    typealias Proposal = (boundary: Int, score: Double, readings: [String], typedKeys: [String])
+    var best: Proposal?
+    for boundary in (originalBoundary + 1) ..< combined.count {
+      let literalPrefix = String(combined[..<boundary])
+      guard ariLiteralPrefixEndsWithProtectedIdentifier(literalPrefix) else { continue }
+      var readings = [String]()
+      var typedKeys = [String]()
+
+      func explore(_ position: Int) {
+        if position == combined.count {
+          guard readings.count >= 2, let score = ariBestWholePhraseScore(for: readings) else { return }
+          let proposal: Proposal = (boundary, score, readings, typedKeys)
+          if let current = best {
+            if score > current.score || (score == current.score && boundary > current.boundary) {
+              best = proposal
+            }
+          } else {
+            best = proposal
+          }
+          return
+        }
+        guard readings.count < prefs.maxCandidateLength else { return }
+        let maxLength = min(5, combined.count - position)
+        guard maxLength >= 2 else { return }
+        for length in 2 ... maxLength {
+          let end = position + length
+          let raw = String(combined[position ..< end])
+          guard let trial = ariComposer(for: raw), trial.hasIntonation(), trial.isPronounceable,
+                let reading = trial.phonabetKeyForQuery(pronounceableOnly: true),
+                !ariChineseGrams(for: reading).isEmpty else { continue }
+          readings.append(reading)
+          typedKeys.append(raw.last == " " ? String(raw.dropLast()) : raw)
+          explore(end)
+          typedKeys.removeLast()
+          readings.removeLast()
+        }
+      }
+      explore(boundary)
+    }
+
+    guard let best else { return index }
+    let literalCells = combined[..<best.boundary].map {
+      AriInputBuffer.Cell(text: String($0), typedKeys: String($0))
+    }
+    let group = zip(best.readings, best.typedKeys).map { reading, typedKeys in
+      let value = ariChineseGrams(for: reading).first?.current.first.map(String.init) ?? typedKeys
+      return AriInputBuffer.Cell(text: value, reading: reading, typedKeys: typedKeys)
+    }
+    let replacement = literalCells + group
+    ariBuffer.cells.replaceSubrange(literalStart ..< run.upperBound, with: replacement)
+    ariBuffer.cursor = literalStart + replacement.count
+    return literalStart + literalCells.count
+  }
+
+  private func ariLiteralPrefixEndsWithProtectedIdentifier(_ prefix: String) -> Bool {
+    // Ari 切分特例 1（精確 token）：保護常見 CPU 架構名稱。
+    if ["x86", "x64", "arm64"].contains(prefix.lowercased()) { return true }
+    // Ari 切分特例 2（格式型）：英數識別字以至少三位數字結尾，例如 `user123`。
+    return prefix.range(
+      of: #"[A-Za-z][A-Za-z0-9_-]*\d{3,}$"#, options: .regularExpression
+    ) != nil
+  }
+
+  private func ariLiteralPrefixLooksDangling(_ prefix: String) -> Bool {
+    let letters = prefix.unicodeScalars.suffix(2)
+    guard letters.count == 2, letters.allSatisfy({ (0x41 ... 0x5A).contains($0.value) }) == false
+    else { return false }
+    let lower = letters.map { scalar -> UInt32 in
+      (0x41 ... 0x5A).contains(scalar.value) ? scalar.value + 0x20 : scalar.value
+    }
+    let vowels: Set<UInt32> = [0x61, 0x65, 0x69, 0x6F, 0x75]
+    return lower.allSatisfy { (0x61 ... 0x7A).contains($0) && !vowels.contains($0) }
+  }
+
+  /// 技術字串保護可能暫緩第一個音節；若後續尾端能完整切成兩個以上音節，且詞庫有
+  /// 整詞命中，便一次把該詞轉入中文。第一音節必須帶聲母，避免把 `README.3-3`
+  /// 這類副檔名形狀誤判成「偶爾」。
+  private func convertAriLiteralPhraseTailIfPossible(runStart: Int) -> Bool {
+    let upper = ariBuffer.cursor
+    guard upper - runStart >= 4 else { return false }
+    let searchLowerBound = max(runStart, upper - max(8, prefs.maxCandidateLength * 5))
+    var best: (lower: Int, readings: [String], typedKeys: [String])?
+
+    for lower in searchLowerBound ..< upper {
+      let literalPrefix = ariBuffer.cells[runStart ..< lower].map(\.text).joined()
+      guard !literalPrefix.isEmpty,
+            !literalPrefix.contains("://"), !literalPrefix.contains("@"),
+            !literalPrefix.contains("/"), !literalPrefix.contains("\\"),
+            literalPrefix.range(of: #"[A-Za-z]"#, options: .regularExpression) != nil else { continue }
+
+      var readings = [String]()
+      var typedKeys = [String]()
+      func explore(_ position: Int) {
+        if position == upper {
+          guard readings.count >= 2,
+                let firstRaw = typedKeys.first,
+                let firstComposer = ariComposer(for: firstRaw),
+                !firstComposer.consonant.value.isEmpty else { return }
+          let hasWholePhrase = currentLM.unigramsFor(keyArray: readings).contains { gram in
+            gram.keyArray.count == readings.count && gram.current.count == readings.count
+          }
+          guard hasWholePhrase else { return }
+          let proposal = (lower: lower, readings: readings, typedKeys: typedKeys)
+          if let currentBest = best {
+            if lower > currentBest.lower { best = proposal }
+          } else {
+            best = proposal
+          }
+          return
+        }
+        let maxLength = min(5, upper - position)
+        guard maxLength >= 2 else { return }
+        for length in 2 ... maxLength {
+          let end = position + length
+          let raw = ariBuffer.cells[position ..< end].map(\.text).joined()
+          guard let trial = ariComposer(for: raw), trial.hasIntonation(), trial.isPronounceable,
+                let reading = trial.phonabetKeyForQuery(pronounceableOnly: true),
+                !ariChineseGrams(for: reading).isEmpty else { continue }
+          readings.append(reading)
+          typedKeys.append(raw.last == " " ? String(raw.dropLast()) : raw)
+          explore(end)
+          typedKeys.removeLast()
+          readings.removeLast()
+        }
+      }
+      explore(lower)
+    }
+
+    guard let best else { return false }
+    ariBuffer.cells.removeSubrange(best.lower ..< upper)
+    ariBuffer.cursor = best.lower
+    for (reading, typedKeys) in zip(best.readings, best.typedKeys) {
+      insertAriChinese(reading: reading, typedKeys: typedKeys)
+    }
+    return true
+  }
+
+  private func ariLiteralRunLooksTechnical(_ literalRun: String) -> Bool {
+    // 下列 URL、email、檔名、版本號與 IP 判定皆為通用格式保護。
+    if literalRun.contains("://") || literalRun.hasPrefix("//")
+      || literalRun.contains("@") { return true }
+    if literalRun.range(
+      of: #"(?:^|[/\\])[^ ]+\.[A-Za-z0-9]+$"#, options: .regularExpression
+    ) != nil { return true }
+    if literalRun.range(
+      of: #"^[A-Z][A-Z0-9_-]*\.[A-Za-z0-9._-]*$"#, options: .regularExpression
+    ) != nil { return true }
+    if literalRun.range(
+      of: #"(?:^|[-_])v?\d+(?:\.\d+){2,}"#, options: .regularExpression
+    ) != nil { return true }
+    if literalRun.range(
+      of: #"(?:^|[-_])v?\d+(?:\.\d+)+\."#, options: .regularExpression
+    ) != nil { return true }
+    if literalRun.range(
+      of: #"^\d{1,3}(?:\.\d{0,3})+$"#, options: .regularExpression
+    ) != nil { return true }
+    // Ari 切分特例 1（精確 token）的純 literal 保護。
+    if literalRun.range(
+      of: #"^(?:x86|x64|arm64)$"#, options: [.regularExpression, .caseInsensitive]
+    ) != nil { return true }
     return false
   }
 
@@ -723,14 +970,49 @@ extension InputHandlerProtocol {
   }
 
   /// 不可讓較短 suffix 把緊鄰的注音成分留在英文前綴：例如 `/6` 前方的 `u`
-  /// 應合併為 `u/6`。若前一鍵是聲母，只有明確的小寫英文邊界才允許切開；
-  /// 因此 `acer1u3` 會繼續擴張成 `1u3`，而 `aceru/6` 則停在 `u/6`。
+  /// 應合併為 `u/6`。若前一鍵是聲母，只有明確的英文字母邊界才允許切開；
+  /// 若短 suffix 暫時可成立，後續會再由完整詞證據決定是否收回前一聲母。
+  /// 因此 `acer1u3` 會立即擴張成 `1u3`；`acerru04` 則先保留較短 suffix，
+  /// 等「鍵盤」完整出現後再修復為 `ru04`，避免傷及 `CSS樣式` 這類英文尾端重複字母。
   private func ariLiteralSuffixBoundaryIsAllowed(
     composer trial: Tekkon.Composer,
     runStart: Int,
     suffixStart: Int
   ) -> Bool {
     guard suffixStart > runStart else { return true }
+    let firstKey = ariBuffer.cells[suffixStart].text
+    // Ari 切分特例 3（按鍵形狀）：`acerg.3u,4` 輸入到 `u,` 時，`.3u,`
+    // 也能碰巧成音節；但前一鍵與 `.3` 已是完整的有聲調音節。先保留重疊邊界，
+    // 待完整詞出現後再切分。
+    if firstKey == ".", suffixStart > runStart {
+      let end = min(ariBuffer.cursor, suffixStart + 2)
+      if end > suffixStart + 1 {
+        let overlapped = ariBuffer.cells[suffixStart - 1 ..< end].map(\.text).joined()
+        if let composer = ariComposer(for: overlapped), composer.hasIntonation(), composer.isPronounceable,
+           let reading = composer.phonabetKeyForQuery(pronounceableOnly: true),
+           !ariChineseGrams(for: reading).isEmpty {
+          return false
+        }
+      }
+    }
+    if let firstComposer = ariComposer(for: firstKey),
+       !firstComposer.intonation.value.isEmpty,
+       firstComposer.consonant.value.isEmpty,
+       firstComposer.semivowel.value.isEmpty,
+       firstComposer.vowel.value.isEmpty {
+      let priorText = ariBuffer.cells[suffixStart - 1].text
+      if priorText.unicodeScalars.allSatisfy({ (0x30 ... 0x39).contains($0.value) }) {
+        return false
+      }
+      let bodySearchLower = max(runStart, suffixStart - 3)
+      for lower in bodySearchLower ..< suffixStart {
+        let body = ariBuffer.cells[lower ..< suffixStart].map(\.text).joined()
+        if let bodyComposer = ariComposer(for: body), !bodyComposer.hasIntonation(),
+           bodyComposer.isPronounceable {
+          return false
+        }
+      }
+    }
     let priorKey = ariBuffer.cells[suffixStart - 1].text
     guard priorKey.count == 1, let prior = ariComposer(for: priorKey) else { return true }
     let priorIsSemivowel = prior.consonant.value.isEmpty
@@ -741,12 +1023,14 @@ extension InputHandlerProtocol {
       && prior.semivowel.value.isEmpty && prior.vowel.value.isEmpty
     guard trial.consonant.value.isEmpty, priorIsConsonant else { return true }
     let literalPrefix = ariBuffer.cells[runStart ..< suffixStart].map(\.text).joined()
-    return ariHasClearLowercaseBoundary(literalPrefix)
+    return ariHasClearLetterBoundary(literalPrefix)
   }
 
-  private func ariHasClearLowercaseBoundary(_ literalPrefix: String) -> Bool {
+  private func ariHasClearLetterBoundary(_ literalPrefix: String) -> Bool {
     let boundary = literalPrefix.unicodeScalars.suffix(2)
-    return boundary.count == 2 && boundary.allSatisfy { (0x61 ... 0x7A).contains($0.value) }
+    return boundary.count == 2 && boundary.allSatisfy {
+      (0x41 ... 0x5A).contains($0.value) || (0x61 ... 0x7A).contains($0.value)
+    }
   }
 
   private func ariLiteralRunStart(before cursor: Int) -> Int {

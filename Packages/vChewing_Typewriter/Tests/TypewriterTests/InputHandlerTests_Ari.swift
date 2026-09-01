@@ -48,6 +48,7 @@ extension InputHandlerTests {
       ("(hk4g4", "(測試"),
       ("aceru/6aj4", "acer螢幕"),
       ("acer1u32u04", "acer筆電"),
+      ("acerru04q06", "acer鍵盤"),
       ("APIji3", "API我"),
       ("example2. ", "example都"),
       ("a ", "a "),
@@ -169,6 +170,39 @@ extension InputHandlerTests {
   }
 
   @Test
+  func test_AriRetokenizesProtectedIdentifierBoundaries() throws {
+    let (handler, _) = try prepareAriHandler()
+    let cleanup = installAriTestGrams(handler)
+    defer { cleanup(); handler.prefs.ariIMEEnabled = false; handler.clear() }
+
+    let cases: [(input: String, literal: String, syllables: [String])] = [
+      // Ari 切分特例 3：點號造成的重疊音節。
+      ("acerg.3u,4", "acer", ["g.3", "u,4"]),
+      // Ari 切分特例 1：精確架構 token。
+      ("x86tj3xu3fu4", "x86", ["tj3", "xu3", "fu4"]),
+      // Ari 切分特例 2：英數識別字的三位數字尾碼。
+      ("user1235;4cl4", "user123", ["5;4", "cl4"]),
+    ]
+    for item in cases {
+      handler.clear()
+      typeSentence(item.input)
+      #expect(handler.ariBuffer.cells.filter { !$0.isChinese }.map(\.text).joined() == item.literal)
+      #expect(handler.ariBuffer.cells.filter(\.isChinese).map(\.typedKeys) == item.syllables)
+    }
+
+    let technicalLiterals = [
+      "README.3-3", "Ari-IME-2.6.2", "v1.0.0.3-3",
+      "127.0.0.1:3000", "https://ari-ime.test/.3-3",
+    ]
+    for item in technicalLiterals {
+      handler.clear()
+      typeSentence(item)
+      #expect(handler.ariBuffer.displayedText == item)
+      #expect(handler.ariBuffer.cells.allSatisfy { !$0.isChinese })
+    }
+  }
+
+  @Test
   func test_AriPunctuationShortcutAndShiftedPhysicalKeyFamily() throws {
     let (handler, session) = try prepareAriHandler()
     let cleanup = installAriTestGrams(handler)
@@ -258,15 +292,21 @@ extension InputHandlerTests {
   }
 
   @Test
-  func test_AriCommandPasteAndForcedEnglishSuppressesCandidates() throws {
+  func test_AriPasteRoutingAndForcedEnglishSuppressesCandidates() throws {
     let (handler, session) = try prepareAriHandler()
     let cleanup = installAriTestGrams(handler)
     defer { cleanup(); handler.prefs.ariIMEEnabled = false; handler.clear() }
 
     handler.ariPasteboardProvider = { "貼上" }
+    typeSentence("su3")
+    #expect(handler.ariBuffer.displayedText == "你")
     let commandPaste = KBEvent.KeyEventData(flags: .command, chars: "v").asEvent
-    #expect(handler.triageInput(event: commandPaste))
-    #expect(handler.ariBuffer.displayedText == "貼上")
+    #expect(!handler.triageInput(event: commandPaste))
+    #expect(handler.ariBuffer.displayedText == "你")
+
+    let controlPaste = KBEvent.KeyEventData(flags: .control, chars: "v").asEvent
+    #expect(handler.triageInput(event: controlPaste))
+    #expect(handler.ariBuffer.displayedText == "你貼上")
 
     handler.clear()
     typeSentence("su3")
@@ -385,6 +425,19 @@ extension InputHandlerTests {
     ㄧㄥˊ-ㄇㄨˋ 螢幕 -0.5
     ㄧㄥˊ 螢 -1
     ㄇㄨˋ 幕 -1
+    ㄐㄧㄢˋ-ㄆㄢˊ 鍵盤 -0.5
+    ㄐㄧㄢˋ 鍵 -1
+    ㄆㄢˊ 盤 -1
+    ㄕㄡˇ-ㄧㄝˋ 首頁 -0.5
+    ㄕㄡˇ 首 -1
+    ㄧㄝˋ 頁 -1
+    ㄔㄨˇ-ㄌㄧˇ-ㄑㄧˋ 處理器 -0.5
+    ㄔㄨˇ 處 -1
+    ㄌㄧˇ 理 -1
+    ㄑㄧˋ 器 -1
+    ㄓㄤˋ-ㄏㄠˋ 帳號 -0.5
+    ㄓㄤˋ 帳 -1
+    ㄏㄠˋ 號 -1
     """
     let grams = extractGrams(from: data)
     grams.forEach { handler.currentLM.insertTemporaryData(unigram: $0, isFiltering: false) }

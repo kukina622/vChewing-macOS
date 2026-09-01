@@ -18,15 +18,15 @@ Ari IME 是繁體中文注音輸入法。它最重要的差異不是字典，而
 
 最基本的相容範例：
 
-| 輸入（大千） | pre-edit 結果 | 意義 |
-|---|---|---|
-| `su` | `su` | 注音尚未有聲調，保持原鍵 |
-| `su3` | `你` | 完整音節才轉字 |
-| `s3u` | `你` | 接受聲調亂序輸入 |
-| `su3cl3` | `你好` | 連續中文交給語境模型組詞 |
-| `su3helloji3` | `你hello我` | 中文、英文、中文可連續混輸 |
-| `aceru/6aj4` | `acer螢幕` | 從英文尾端剝出最短可成立音節 |
-| `(hk4g4` | `(測試` | 標點會形成邊界，不阻塞後續注音 |
+| 輸入（大千）    | pre-edit 結果 | 意義                           |
+| --------------- | ------------- | ------------------------------ |
+| `su`          | `su`        | 注音尚未有聲調，保持原鍵       |
+| `su3`         | `你`        | 完整音節才轉字                 |
+| `s3u`         | `你`        | 接受聲調亂序輸入               |
+| `su3cl3`      | `你好`      | 連續中文交給語境模型組詞       |
+| `su3helloji3` | `你hello我` | 中文、英文、中文可連續混輸     |
+| `aceru/6aj4`  | `acer螢幕`  | 從英文尾端剝出最短可成立音節   |
+| `(hk4g4`      | `(測試`     | 標點會形成邊界，不阻塞後續注音 |
 
 ## 2. 復刻範圍與優先順序
 
@@ -147,19 +147,19 @@ selectionGroup  同一次詞／片語選取涵蓋的 cell 群組
 
 ### 4.2 游標模式行為
 
-| 按鍵 | 行為 |
-|---|---|
-| ←／→ | 以 grapheme 為單位移動一格 |
-| Home／Begin | 到 pre-edit 開頭 |
-| End | 到 pre-edit 結尾 |
-| Ctrl+←／Ctrl+→ | 依 libchewing 詞界或英文字詞邊界移動 |
-| ↓ | 開啟游標右側 cell 的候選；在尾端時選最後一格 |
-| ↑ | 中文 cell 開候選；英文 raw key 嘗試重新解讀為注音 |
-| Backspace | 刪游標左側 cell |
-| Delete | 刪游標右側 cell |
-| 可列印鍵／Space | 在游標處開始完整的一般混輸流程 |
-| Esc | 離開編輯但保留文字，之後輸入回到尾端 |
-| Enter | 送出整段 |
+| 按鍵             | 行為                                              |
+| ---------------- | ------------------------------------------------- |
+| ←／→           | 以 grapheme 為單位移動一格                        |
+| Home／Begin      | 到 pre-edit 開頭                                  |
+| End              | 到 pre-edit 結尾                                  |
+| Ctrl+←／Ctrl+→ | 依 libchewing 詞界或英文字詞邊界移動              |
+| ↓               | 開啟游標右側 cell 的候選；在尾端時選最後一格      |
+| ↑               | 中文 cell 開候選；英文 raw key 嘗試重新解讀為注音 |
+| Backspace        | 刪游標左側 cell                                   |
+| Delete           | 刪游標右側 cell                                   |
+| 可列印鍵／Space  | 在游標處開始完整的一般混輸流程                    |
+| Esc              | 離開編輯但保留文字，之後輸入回到尾端              |
+| Enter            | 送出整段                                          |
 
 中段組字時，插入點右方內容必須先 park；新注音照一般規則完成後再與右側內容接回。游標要停在新內容之後，而不是跳到整段尾端。
 
@@ -176,21 +176,21 @@ selectionGroup  同一次詞／片語選取涵蓋的 cell 群組
 
 ### 4.4 候選操作
 
-| 按鍵／操作 | 行為 |
-|---|---|
-| ↓／Space／Tab | 下一候選，跨頁並在末尾循環 |
-| ↑／Shift+Tab | 上一候選，跨頁並在開頭循環 |
-| PageDown／PageUp | 下一頁／上一頁，highlight 回到該頁第 1 項 |
-| `1`–`9`／數字鍵盤 `1`–`9` | 選目前頁相對應項目 |
-| Enter | 選目前 highlight，不直接 commit 整段 |
-| 滑鼠／觸控 | 與數字選取共用同一路徑 |
-| ←／→ | 移到相鄰 cell 並重建候選；最末 cell 再按 → 回到尾端游標 |
-| Home／End | 候選焦點跳到第一／最後 cell |
-| Backspace／Delete | 刪除焦點 cell，關閉候選並留在原位置 |
-| Esc | 只關候選窗，回到同位置的游標模式 |
-| Shift+Delete | 移除 highlight 對應的個人學習，不刪內建詞 |
-| 其他可列印鍵 | 在焦點 cell 前開始中段插入 |
-| 其他控制鍵 | 關候選、保留游標位置，並交還應用程式 |
+| 按鍵／操作                          | 行為                                                     |
+| ----------------------------------- | -------------------------------------------------------- |
+| ↓／Space／Tab                      | 下一候選，跨頁並在末尾循環                               |
+| ↑／Shift+Tab                       | 上一候選，跨頁並在開頭循環                               |
+| PageDown／PageUp                    | 下一頁／上一頁，highlight 回到該頁第 1 項                |
+| `1`–`9`／數字鍵盤 `1`–`9` | 選目前頁相對應項目                                       |
+| Enter                               | 選目前 highlight，不直接 commit 整段                     |
+| 滑鼠／觸控                          | 與數字選取共用同一路徑                                   |
+| ←／→                              | 移到相鄰 cell 並重建候選；最末 cell 再按 → 回到尾端游標 |
+| Home／End                           | 候選焦點跳到第一／最後 cell                              |
+| Backspace／Delete                   | 刪除焦點 cell，關閉候選並留在原位置                      |
+| Esc                                 | 只關候選窗，回到同位置的游標模式                         |
+| Shift+Delete                        | 移除 highlight 對應的個人學習，不刪內建詞                |
+| 其他可列印鍵                        | 在焦點 cell 前開始中段插入                               |
+| 其他控制鍵                          | 關候選、保留游標位置，並交還應用程式                     |
 
 前端的滑鼠 callback 可能延遲。選取 API 除頁內 index 外，還應帶建立 callback 時的候選文字；頁面或內容已變時拒絕舊 callback，避免選錯同一槽位的新候選。
 
@@ -216,19 +216,19 @@ selectionGroup  同一次詞／片語選取涵蓋的 cell 群組
 
 主要中文形式包括：
 
-| 實體鍵／輸入 | 中文形式 |
-|---|---|
-| `,` 或 `<` | `，` |
-| `.` 或 `>` | `。` |
-| `/` 或 `?` | `？` |
-| `'` 或 `"` 的中文標點快捷手勢 | `、` |
-| `(` `)` | `（` `）` |
-| `[` `]` | `「` `」` |
-| `{` `}` | `『` `』` |
-| `!` `:` | `！` `：` |
-| `\` | `、` |
-| `^` | `……` |
-| `@`、`#`、`$`、`%`、`&`、`*`、`+`、`=`、直線、`~`、`_`、反引號、雙引號 | 對應全形符號 |
+| 實體鍵／輸入                                                                               | 中文形式      |
+| ------------------------------------------------------------------------------------------ | ------------- |
+| `,` 或 `<`                                                                             | `，`        |
+| `.` 或 `>`                                                                             | `。`        |
+| `/` 或 `?`                                                                             | `？`        |
+| `'` 或 `"` 的中文標點快捷手勢                                                          | `、`        |
+| `(` `)`                                                                                | `（` `）` |
+| `[` `]`                                                                                | `「` `」` |
+| `{` `}`                                                                                | `『` `』` |
+| `!` `:`                                                                                | `！` `：` |
+| `\`                                                                                      | `、`        |
+| `^`                                                                                      | `……`      |
+| `@`、`#`、`$`、`%`、`&`、`*`、`+`、`=`、直線、`~`、`_`、反引號、雙引號 | 對應全形符號  |
 
 ### 5.2 標點候選
 
@@ -334,19 +334,19 @@ candidates KEYS
 
 ## 10. 鍵盤配置
 
-| 顯示名稱 | 內部名稱 | `你` | `你好` |
-|---|---|---|---|
-| 大千 | `Default` | `su3` | `su3cl3` |
-| 倚天 | `Eten` | `ne3` | `ne3hz3` |
-| 許氏 | `Hsu` | `nef` | `nefhwf` |
-| IBM | `Ibm` | `7a,` | `7a,-;,` |
-| 精業 | `GinYieh` | `d-a` | `d-avla` |
-| Dvorak | `Dvorak` | `og3` | `og3jn3` |
-| Carpalx | `Carpalx` | `su3` | `su3cl3` |
-| Colemak-DH ANSI | `ColemakDhAnsi` | `rl3` | `rl3di3` |
+| 顯示名稱               | 內部名稱          | `你`  | `你好`   |
+| ---------------------- | ----------------- | ------- | ---------- |
+| 大千                   | `Default`       | `su3` | `su3cl3` |
+| 倚天                   | `Eten`          | `ne3` | `ne3hz3` |
+| 許氏                   | `Hsu`           | `nef` | `nefhwf` |
+| IBM                    | `Ibm`           | `7a,` | `7a,-;,` |
+| 精業                   | `GinYieh`       | `d-a` | `d-avla` |
+| Dvorak                 | `Dvorak`        | `og3` | `og3jn3` |
+| Carpalx                | `Carpalx`       | `su3` | `su3cl3` |
+| Colemak-DH ANSI        | `ColemakDhAnsi` | `rl3` | `rl3di3` |
 | Colemak-DH Ortholinear | `ColemakDhOrth` | `rl3` | `rl3ci3` |
-| Workman | `Workman` | `sf3` | `sf3mo3` |
-| Colemak | `Colemak` | `rl3` | `rl3ci3` |
+| Workman                | `Workman`       | `sf3` | `sf3mo3` |
+| Colemak                | `Colemak`       | `rl3` | `rl3ci3` |
 
 配置層必須同時提供「鍵屬於哪個注音 slot」與「底層轉換引擎的 keyboard type」，避免 parser 與字典引擎對同一鍵有不同解讀。切換配置時：
 
@@ -378,17 +378,17 @@ candidates KEYS
 
 ### 12.2 設定清單
 
-| 設定 | 預設 | 功能 |
-|---|---|---|
-| `KeyboardLayout` | `Default` | 11 種注音配置 |
-| `FullWidthPunctuation` | `false` | 無修飾鍵也用全形／中文標點 |
-| `ChinesePunctuationShortcut` | `ControlShift` | 臨時中文標點手勢 |
-| `SpaceCandidateMode` | `false` | 完整中文後 Space 開候選 |
-| `ReconversionKey` | `Ctrl+Alt+R` | 已送出中文再轉換 |
-| `AutoLearn` | `true` | 本機個人學習 |
-| `ShowStatusLine` | `false` | composition 狀態列 |
-| `ShowPendingZhuyin` | `false` | 顯示待組注音符號 |
-| `FullWidthPunctuationToggle` | 空 | 即時切換全形標點的快捷鍵 |
+| 設定                           | 預設             | 功能                       |
+| ------------------------------ | ---------------- | -------------------------- |
+| `KeyboardLayout`             | `Default`      | 11 種注音配置              |
+| `FullWidthPunctuation`       | `false`        | 無修飾鍵也用全形／中文標點 |
+| `ChinesePunctuationShortcut` | `ControlShift` | 臨時中文標點手勢           |
+| `SpaceCandidateMode`         | `false`        | 完整中文後 Space 開候選    |
+| `ReconversionKey`            | `Ctrl+Alt+R`   | 已送出中文再轉換           |
+| `AutoLearn`                  | `true`         | 本機個人學習               |
+| `ShowStatusLine`             | `false`        | composition 狀態列         |
+| `ShowPendingZhuyin`          | `false`        | 顯示待組注音符號           |
+| `FullWidthPunctuationToggle` | 空               | 即時切換全形標點的快捷鍵   |
 
 ## 13. 平台介面分層
 
