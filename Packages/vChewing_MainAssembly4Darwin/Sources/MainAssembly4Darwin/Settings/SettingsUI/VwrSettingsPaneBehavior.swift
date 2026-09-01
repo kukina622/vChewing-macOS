@@ -12,6 +12,9 @@ import SwiftUI
 
 @available(macOS 14, *)
 public struct VwrSettingsPaneBehavior: View {
+  @AppStorage(UserDef.kAriIMEEnabled.rawValue)
+  private var ariIMEEnabled = UserDef.kAriIMEEnabled.boolDefaultValue
+
   // MARK: - Main View
 
   public var body: some View {
@@ -29,15 +32,15 @@ public struct VwrSettingsPaneBehavior: View {
       Section {
         UserDef.kAriIMEEnabled.renderUI()
         UserDef.kAriFullWidthPunctuationEnabled.renderUI()
-          .disabled(!PrefMgr.shared.ariIMEEnabled)
+          .disabled(!ariIMEEnabled)
         UserDef.kAriSpaceCandidateModeEnabled.renderUI()
-          .disabled(!PrefMgr.shared.ariIMEEnabled)
+          .disabled(!ariIMEEnabled)
         UserDef.kAriAutoLearnEnabled.renderUI()
-          .disabled(!PrefMgr.shared.ariIMEEnabled)
+          .disabled(!ariIMEEnabled)
         UserDef.kAriShowStatusLineEnabled.renderUI()
-          .disabled(!PrefMgr.shared.ariIMEEnabled)
+          .disabled(!ariIMEEnabled)
         UserDef.kAriShowPendingZhuyinEnabled.renderUI()
-          .disabled(!PrefMgr.shared.ariIMEEnabled)
+          .disabled(!ariIMEEnabled)
       }
 
       Section {

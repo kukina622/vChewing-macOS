@@ -33,6 +33,43 @@ extension InputHandlerTests {
   }
 
   @Test
+  func test_AriSpecificationExampleCorpus() throws {
+    let (handler, _) = try prepareAriHandler()
+    let cleanup = installAriTestGrams(handler)
+    defer { cleanup(); handler.prefs.ariIMEEnabled = false; handler.clear() }
+
+    let examples: [(input: String, expected: String)] = [
+      ("abc123", "abc123"),
+      ("su", "su"),
+      ("su3", "你"),
+      ("s3u", "你"),
+      ("su3cl3", "你好"),
+      ("su3helloji3", "你hello我"),
+      ("(hk4g4", "(測試"),
+      ("aceru/6aj4", "acer螢幕"),
+      ("acer1u32u04", "acer筆電"),
+      ("APIji3", "API我"),
+      ("example2. ", "example都"),
+      ("a ", "a "),
+      ("kai@example.com", "kai@example.com"),
+      ("https://ari-ime.test/v1.0.0", "https://ari-ime.test/v1.0.0"),
+      ("Ari-IME-1.0.0", "Ari-IME-1.0.0"),
+      ("README.md", "README.md"),
+    ]
+    for example in examples {
+      handler.clear()
+      typeSentence(example.input)
+      #expect(handler.ariBuffer.displayedText == example.expected)
+    }
+
+    handler.clear()
+    handler.ariBuffer.insertLiteral("範例的")
+    typeSentence("example2. ")
+    handler.ariBuffer.insertLiteral("蒐集")
+    #expect(handler.ariBuffer.displayedText == "範例的example都蒐集")
+  }
+
+  @Test
   func test_AriAcceptsShuffledToneAndUsesContext() throws {
     let (handler, _) = try prepareAriHandler()
     let cleanup = installAriTestGrams(handler)
@@ -334,8 +371,14 @@ extension InputHandlerTests {
     ㄏㄠˇ 好 -1
     ㄨㄛˇ 我 -1
     ㄏㄠˇ-ㄨㄛˇ 好窩 -0.7
+    ㄘㄜˋ-ㄕˋ 測試 -0.5
+    ㄘㄜˋ 測 -1
+    ㄕˋ 試 -1
     ㄧ 一 -1
     ㄧˇ 以 -1
+    ㄡ 歐 -1
+    ㄥˊ 嗯 -1
+    ㄉㄡ 都 -1
     ㄅㄧˇ-ㄉㄧㄢˋ 筆電 -0.5
     ㄅㄧˇ 筆 -1
     ㄉㄧㄢˋ 電 -1

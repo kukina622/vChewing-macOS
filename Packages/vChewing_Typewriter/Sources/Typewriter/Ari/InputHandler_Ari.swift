@@ -333,6 +333,13 @@ extension InputHandlerProtocol {
       session.switchState(generateAriInputtingState())
       return true
     }
+    if ariBuffer.isInEnglishTail {
+      ariBuffer.insertLiteral(" ")
+      _ = convertAriLiteralTailIfPossible()
+      ariBuffer.isInEnglishTail = false
+      session.switchState(generateAriInputtingState())
+      return true
+    }
     if prefs.ariSpaceCandidateModeEnabled, ariBuffer.cursor > 0,
        ariBuffer.cells[ariBuffer.cursor - 1].isChinese,
        openAriCandidates(at: ariBuffer.cursor - 1) {
@@ -363,11 +370,12 @@ extension InputHandlerProtocol {
     let runStart = ariLiteralRunStart(before: ariBuffer.cursor)
     guard runStart < ariBuffer.cursor else { return false }
     let literalRun = ariBuffer.cells[runStart ..< ariBuffer.cursor].map(\.text).joined()
+    let technicalProbe = literalRun.last == " " ? String(literalRun.dropLast()) : literalRun
     // URL、email、檔名與路徑尾端偏向字面值。
     let literalBoundaryIsTechnical = runStart > 0
       && ["@", "/", "\\", "."].contains(ariBuffer.cells[runStart - 1].text)
-    if literalBoundaryIsTechnical || literalRun.contains("://") || literalRun.contains("@")
-      || literalRun.range(of: #"(?:^|[/\\])[^ ]+\.[A-Za-z0-9]+$"#, options: .regularExpression) != nil {
+    if literalBoundaryIsTechnical || technicalProbe.contains("://") || technicalProbe.contains("@")
+      || technicalProbe.range(of: #"(?:^|[/\\])[^ ]+\.[A-Za-z0-9]+$"#, options: .regularExpression) != nil {
       return false
     }
     let maxLength = min(5, ariBuffer.cursor - runStart)
@@ -378,10 +386,9 @@ extension InputHandlerProtocol {
       guard let trial = ariComposer(for: suffix), trial.hasIntonation(), trial.isPronounceable,
             let reading = trial.phonabetKeyForQuery(pronounceableOnly: true),
             !ariChineseGrams(for: reading).isEmpty else { continue }
-      if ariIsAmbiguousSingleMedialSuffix(suffix, composer: trial) {
-        let literalPrefix = ariBuffer.cells[runStart ..< lower].map(\.text).joined()
-        guard ariAllowsSingleMedialSuffix(after: literalPrefix) else { continue }
-      }
+      guard ariLiteralSuffixBoundaryIsAllowed(
+        composer: trial, runStart: runStart, suffixStart: lower
+      ) else { continue }
       let typed = suffix.last == " " ? String(suffix.dropLast()) : suffix
       ariBuffer.cells.removeSubrange(lower ..< ariBuffer.cursor)
       ariBuffer.cursor = lower
@@ -715,19 +722,29 @@ extension InputHandlerProtocol {
     return min(1, candidates.count)
   }
 
-  private func ariIsAmbiguousSingleMedialSuffix(
-    _ suffix: String,
-    composer trial: Tekkon.Composer
+  /// 不可讓較短 suffix 把緊鄰的注音成分留在英文前綴：例如 `/6` 前方的 `u`
+  /// 應合併為 `u/6`。若前一鍵是聲母，只有明確的小寫英文邊界才允許切開；
+  /// 因此 `acer1u3` 會繼續擴張成 `1u3`，而 `aceru/6` 則停在 `u/6`。
+  private func ariLiteralSuffixBoundaryIsAllowed(
+    composer trial: Tekkon.Composer,
+    runStart: Int,
+    suffixStart: Int
   ) -> Bool {
-    suffix.count == 2
-      && trial.consonant.value.isEmpty
-      && !trial.semivowel.value.isEmpty
-      && trial.vowel.value.isEmpty
+    guard suffixStart > runStart else { return true }
+    let priorKey = ariBuffer.cells[suffixStart - 1].text
+    guard priorKey.count == 1, let prior = ariComposer(for: priorKey) else { return true }
+    let priorIsSemivowel = prior.consonant.value.isEmpty
+      && !prior.semivowel.value.isEmpty && prior.vowel.value.isEmpty
+    if trial.semivowel.value.isEmpty, priorIsSemivowel { return false }
+
+    let priorIsConsonant = !prior.consonant.value.isEmpty
+      && prior.semivowel.value.isEmpty && prior.vowel.value.isEmpty
+    guard trial.consonant.value.isEmpty, priorIsConsonant else { return true }
+    let literalPrefix = ariBuffer.cells[runStart ..< suffixStart].map(\.text).joined()
+    return ariHasClearLowercaseBoundary(literalPrefix)
   }
 
-  /// 單一介音鍵只有在英文切割邊界足夠明確時才採最短 suffix；否則繼續擴張，
-  /// 讓 `acer1u3` 優先嘗試完整的 `1u3`，而不是留下疑似聲母的 `1`。
-  private func ariAllowsSingleMedialSuffix(after literalPrefix: String) -> Bool {
+  private func ariHasClearLowercaseBoundary(_ literalPrefix: String) -> Bool {
     let boundary = literalPrefix.unicodeScalars.suffix(2)
     return boundary.count == 2 && boundary.allSatisfy { (0x61 ... 0x7A).contains($0.value) }
   }
