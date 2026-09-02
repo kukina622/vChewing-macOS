@@ -102,6 +102,35 @@ extension InputHandlerTests {
   }
 
   @Test
+  func test_AriSpaceKeepsCompletedEnglishWordIntact() throws {
+    let (handler, session) = try prepareAriHandler()
+    let cleanup = installAriTestGrams(handler)
+    defer { cleanup(); handler.prefs.ariIMEEnabled = false; handler.clear() }
+
+    for word in ["secret", "menu", "project", "about"] {
+      handler.clear()
+      typeSentence(word + " ")
+      #expect(handler.ariBuffer.displayedText == word + " ")
+      #expect(handler.ariBuffer.cells.allSatisfy { !$0.isChinese })
+    }
+    #expect(session.recentCommissions.isEmpty)
+
+    handler.clear()
+    typeSentence("hello secret ")
+    #expect(handler.ariBuffer.displayedText == "hello secret ")
+
+    // The same key remains a valid first-tone syllable when it starts pending
+    // composition rather than ending an already established English word.
+    handler.clear()
+    typeSentence("t ")
+    #expect(handler.ariBuffer.displayedText == "吃")
+
+    handler.clear()
+    typeSentence("secret t ")
+    #expect(handler.ariBuffer.displayedText == "secret 吃")
+  }
+
+  @Test
   func test_AriCursorEditingRawCandidateAndUndo() throws {
     let (handler, session) = try prepareAriHandler()
     let cleanup = installAriTestGrams(handler)
@@ -502,6 +531,7 @@ extension InputHandlerTests {
     ㄡ 歐 -1
     ㄥˊ 嗯 -1
     ㄉㄡ 都 -1
+    ㄔ 吃 -1
     ㄅㄧˇ-ㄉㄧㄢˋ 筆電 -0.5
     ㄅㄧˇ 筆 -1
     ㄉㄧㄢˋ 電 -1

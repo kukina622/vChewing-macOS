@@ -393,6 +393,16 @@ extension InputHandlerProtocol {
     guard runStart < ariBuffer.cursor else { return false }
     let literalRun = ariBuffer.cells[runStart ..< ariBuffer.cursor].map(\.text).joined()
     let technicalProbe = literalRun.last == " " ? String(literalRun.dropLast()) : literalRun
+    // Space is ambiguous: it is both the first-tone key and the ordinary word
+    // separator. Once slot conflict has already established an ASCII word in the
+    // English tail, its final letter must stay with that word. Otherwise common
+    // endings such as `secret` and `menu` are peeled into `secre` + ㄔ and
+    // `men` + ㄧ merely because Space was pressed. A standalone `t ` or `u `
+    // still follows the pending-syllable path above, and an explicit delimiter
+    // before the syllable starts a fresh pending composition.
+    if literalRun.last == " ", ariTrailingTokenIsASCIIWord(technicalProbe) {
+      return false
+    }
     if convertAriLiteralPhraseTailIfPossible(runStart: runStart) { return true }
     // 通用格式保護（不是單一輸入特例）：URL、email、檔名與路徑尾端偏向字面值。
     // 若尾端已累積出有聲母開頭的完整詞，
@@ -653,6 +663,14 @@ extension InputHandlerProtocol {
       of: #"^(?:x86|x64|arm64)$"#, options: [.regularExpression, .caseInsensitive]
     ) != nil { return true }
     return false
+  }
+
+  private func ariTrailingTokenIsASCIIWord(_ literalRun: String) -> Bool {
+    guard let token = literalRun.split(whereSeparator: \Character.isWhitespace).last,
+          !token.isEmpty else { return false }
+    return token.unicodeScalars.allSatisfy { scalar in
+      (0x41 ... 0x5A).contains(scalar.value) || (0x61 ... 0x7A).contains(scalar.value)
+    }
   }
 
   private func reassembleAriChineseRun(containing index: Int) {
@@ -1167,10 +1185,18 @@ extension InputHandlerProtocol {
 
   private func ariLiteralRunStart(before cursor: Int) -> Int {
     var lower = cursor
+    // Only a newly appended trailing Space may act as the current syllable's
+    // first-tone marker. Older literal spaces are hard word boundaries; letting
+    // a reverse suffix search cross one allows that old separator to become the
+    // tone of a later English word (for example `hello secret`).
+    let includesTrailingToneSpace = cursor > 0
+      && ariBuffer.cells.indices.contains(cursor - 1)
+      && ariBuffer.cells[cursor - 1].text == " "
     while lower > 0 {
       let cell = ariBuffer.cells[lower - 1]
       guard !cell.isChinese, cell.punctuationKey == nil,
             cell.text.unicodeScalars.allSatisfy({ $0.isASCII }) else { break }
+      if cell.text == " ", !(includesTrailingToneSpace && lower == cursor) { break }
       lower -= 1
     }
     return lower
