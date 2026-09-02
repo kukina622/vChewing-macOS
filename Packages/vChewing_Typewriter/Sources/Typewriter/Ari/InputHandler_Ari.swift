@@ -17,6 +17,9 @@ extension InputHandlerProtocol {
     guard currentTypingMethod == .vChewingFactory, !prefs.cassetteEnabled,
           !composer.isPinyinMode else { return false }
 
+    // 只有連續的 Tab／Shift+Tab 共用同一輪候選；任何其他操作都結束該輪。
+    if !input.isTab { ariBuffer.candidateRevolverContext = nil }
+
     let punctuationShortcut = ariChinesePunctuationShortcutValue(for: input)
     if punctuationShortcut != nil, case let .candidates(focus) = ariBuffer.interactionMode {
       // 中文標點屬於文字輸入；選字窗開啟時先回到目前 cell 後方再重走一般輸入，
@@ -163,6 +166,12 @@ extension InputHandlerProtocol {
       return true
     }
 
+    // 與唯音原本的 revolver 一致：Tab／Shift+Tab 不開候選窗，直接在目前
+    // 中文 cell 的可用候選中正向／反向輪替。
+    if input.isTab {
+      return revolveAriCandidate(reverseOrder: input.isShiftHeld, session: session)
+    }
+
     if input.isSpace {
       return handleAriSpace(session: session)
     }
@@ -234,6 +243,7 @@ extension InputHandlerProtocol {
   /// 滑鼠、觸控及鍵盤選字共用的 Ari 選取入口。
   public func confirmAriCandidate(at index: Int) -> Bool {
     guard let session, ariBuffer.candidates.indices.contains(index) else { return false }
+    ariBuffer.candidateRevolverContext = nil
     let candidate = ariBuffer.candidates[index]
     guard candidate.targetRange.lowerBound >= 0,
           candidate.targetRange.upperBound <= ariBuffer.cells.count else { return false }
@@ -666,27 +676,145 @@ extension InputHandlerProtocol {
 
   // MARK: - Candidates
 
+  private func revolveAriCandidate(reverseOrder: Bool, session: Session) -> Bool {
+    guard ariBuffer.pendingKeys.isEmpty, !ariBuffer.cells.isEmpty else { return false }
+    let displayedSnapshot = AriInputBuffer.Snapshot(
+      cells: ariBuffer.cells, cursor: ariBuffer.cursor
+    )
+    let baseSnapshot: AriInputBuffer.Snapshot
+    let candidates: [AriInputBuffer.Candidate]
+    let currentIndex: Int
+    let focus: Int
+
+    if let context = ariBuffer.candidateRevolverContext,
+       context.rendered == displayedSnapshot {
+      baseSnapshot = context.base
+      candidates = context.candidates
+      currentIndex = context.selectedIndex
+      focus = context.focus
+      // 上一次 Tab 已替這次選取建立 undo；改選同一輪候選時以相同基準取代它，
+      // 避免每按一次 Tab 就堆疊一層中間狀態。
+      if ariBuffer.undoStack.last == baseSnapshot { ariBuffer.undoStack.removeLast() }
+      ariBuffer.cells = baseSnapshot.cells
+      ariBuffer.cursor = baseSnapshot.cursor
+      ariBuffer.isInEnglishTail = ariBuffer.contiguousLiteralTailBeforeCursor
+    } else {
+      ariBuffer.candidateRevolverContext = nil
+      guard ariBuffer.cells.contains(where: \.isChinese) else { return false }
+      focus = min(
+        max(ariBuffer.cursor == ariBuffer.cells.count ? ariBuffer.cursor - 1 : ariBuffer.cursor, 0),
+        ariBuffer.cells.count - 1
+      )
+      guard ariBuffer.cells[focus].isChinese else { return false }
+      baseSnapshot = displayedSnapshot
+      // Revolver 必須使用不因目前顯示文字而重排的固定順序；候選窗專用的
+      // `openAriCandidates` 會把目前項目搬到最前方，拿來輪替只會造成兩項跳動。
+      var fetchedCandidates = fetchAriChineseCandidates(at: focus)
+      guard !fetchedCandidates.isEmpty else { return false }
+      let cell = ariBuffer.cells[focus]
+      let rawKeyCandidate = AriInputBuffer.Candidate(
+        keyArray: [cell.reading ?? ""], value: "原始鍵 \(cell.typedKeys)",
+        targetRange: focus ..< focus + 1, kind: .rawKeys
+      )
+      // 與候選窗使用相同順序：原始鍵緊接在最後一個詞候選後面，再接單字候選。
+      fetchedCandidates.insert(
+        rawKeyCandidate, at: ariRawKeyCandidateInsertionIndex(in: fetchedCandidates)
+      )
+      candidates = fetchedCandidates
+      let matchingIndices = candidates.indices.filter { index in
+        let candidate = candidates[index]
+        return ariBuffer.cells[candidate.targetRange].map(\.text).joined() == candidate.value
+      }
+      guard let matchedIndex = matchingIndices.max(by: { lhs, rhs in
+        candidates[lhs].targetRange.count < candidates[rhs].targetRange.count
+      }) else {
+        session.switchState(generateAriInputtingState())
+        return true
+      }
+      currentIndex = matchedIndex
+    }
+
+    ariBuffer.candidates = candidates
+    ariBuffer.interactionMode = .candidates(focus: focus)
+
+    let eligible = ariBuffer.candidates.indices
+    guard eligible.count > 1,
+          let currentOffset = eligible.firstIndex(of: currentIndex) else {
+      ariBuffer.candidates.removeAll(keepingCapacity: true)
+      ariBuffer.interactionMode = .cursor
+      session.switchState(generateAriInputtingState())
+      return true
+    }
+
+    let delta = reverseOrder ? -1 : 1
+    var selectedOffset: Int?
+    for step in 1 ..< eligible.count {
+      let offset = (currentOffset + delta * step + eligible.count * step) % eligible.count
+      let candidate = ariBuffer.candidates[eligible[offset]]
+      let currentValue = ariBuffer.cells[candidate.targetRange].map(\.text).joined()
+      let proposedValue = candidate.kind == .rawKeys
+        ? ariBuffer.cells[candidate.targetRange].map(\.typedKeys).joined()
+        : candidate.value
+      // 同一畫面文字可能同時以整詞與單字候選存在，例如「筆記本」與末字「本」。
+      // Revolver 必須跳過套用後完全不變的項目，否則每次 Tab 都會停在同一組重疊候選。
+      if currentValue != proposedValue {
+        selectedOffset = offset
+        break
+      }
+    }
+    guard let nextOffset = selectedOffset else {
+      ariBuffer.candidates.removeAll(keepingCapacity: true)
+      ariBuffer.interactionMode = .cursor
+      session.switchState(generateAriInputtingState())
+      return true
+    }
+    let candidateIndex = eligible[nextOffset]
+    let candidate = ariBuffer.candidates[candidateIndex]
+    guard confirmAriCandidate(at: candidateIndex) else { return true }
+    ariBuffer.candidateRevolverContext = .init(
+      base: baseSnapshot,
+      rendered: .init(cells: ariBuffer.cells, cursor: ariBuffer.cursor),
+      candidates: candidates,
+      selectedIndex: candidateIndex,
+      focus: focus
+    )
+    var state = generateAriInputtingState()
+    state.tooltip = "\(nextOffset + 1) / \(eligible.count)　\(candidate.value)"
+    state.tooltipDuration = 0
+    session.switchState(state)
+    return true
+  }
+
+  private func fetchAriChineseCandidates(at focus: Int) -> [AriInputBuffer.Candidate] {
+    guard ariBuffer.cells.indices.contains(focus), ariBuffer.cells[focus].isChinese else { return [] }
+    let run = ariChineseRun(containing: focus)
+    let readings = ariBuffer.cells[run].compactMap(\.reading)
+    guard readings.count == run.count, let trial = ariAssembler(readings: readings) else { return [] }
+    let relativeFocus = focus - run.lowerBound
+    let fetched = trial.fetchCandidates(at: relativeFocus).map(\.pair)
+    var result = [AriInputBuffer.Candidate]()
+    var seen = Set<String>()
+    for pair in fetched {
+      guard let localRange = ariCandidateRange(
+        for: pair.keyArray, focus: relativeFocus, readings: readings
+      ) else { continue }
+      let target = (run.lowerBound + localRange.lowerBound) ..< (run.lowerBound + localRange.upperBound)
+      guard ariCandidateCanReplace(target, focus: focus) else { continue }
+      guard seen.insert("\(target.lowerBound):\(target.upperBound):\(pair.value)").inserted else { continue }
+      result.append(.init(
+        keyArray: pair.keyArray, value: pair.value,
+        targetRange: target, kind: .chinese
+      ))
+    }
+    return result
+  }
+
   private func openAriCandidates(at focus: Int) -> Bool {
     guard ariBuffer.cells.indices.contains(focus) else { return false }
     let cell = ariBuffer.cells[focus]
     var result = [AriInputBuffer.Candidate]()
     if cell.isChinese {
-      let run = ariChineseRun(containing: focus)
-      let readings = ariBuffer.cells[run].compactMap(\.reading)
-      if let trial = ariAssembler(readings: readings) {
-        let relativeFocus = focus - run.lowerBound
-        let fetched = trial.fetchCandidates(at: relativeFocus).map(\.pair)
-        var seen = Set<String>()
-        for pair in fetched {
-          guard let localRange = ariCandidateRange(
-            for: pair.keyArray, focus: relativeFocus, readings: readings
-          ) else { continue }
-          let target = (run.lowerBound + localRange.lowerBound) ..< (run.lowerBound + localRange.upperBound)
-          guard ariCandidateCanReplace(target, focus: focus) else { continue }
-          guard seen.insert("\(target.lowerBound):\(target.upperBound):\(pair.value)").inserted else { continue }
-          result.append(.init(keyArray: pair.keyArray, value: pair.value, targetRange: target, kind: .chinese))
-        }
-      }
+      result = fetchAriChineseCandidates(at: focus)
       let current = AriInputBuffer.Candidate(
         keyArray: [cell.reading ?? ""], value: cell.text,
         targetRange: focus ..< focus + 1, kind: .chinese

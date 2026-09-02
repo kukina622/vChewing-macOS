@@ -70,6 +70,14 @@ public final class AriInputBuffer {
     public var cursor: Int
   }
 
+  struct CandidateRevolverContext: Equatable {
+    var base: Snapshot
+    var rendered: Snapshot
+    var candidates: [Candidate]
+    var selectedIndex: Int
+    var focus: Int
+  }
+
   public var cells = [Cell]()
   /// Cell 邊界游標；0 是最左側，`cells.count` 是最右側。
   public var cursor = 0
@@ -82,6 +90,7 @@ public final class AriInputBuffer {
   public var interactionMode: InteractionMode = .normal
   public var candidates = [Candidate]()
   public var undoStack = [Snapshot]()
+  var candidateRevolverContext: CandidateRevolverContext?
 
   public var isEmpty: Bool { cells.isEmpty && pendingKeys.isEmpty }
 
@@ -108,6 +117,7 @@ public final class AriInputBuffer {
     interactionMode = .normal
     candidates.removeAll(keepingCapacity: true)
     undoStack.removeAll(keepingCapacity: true)
+    candidateRevolverContext = nil
     forcedEnglish = preservingForcedEnglish ? preservedForcedEnglish : false
   }
 
@@ -161,16 +171,19 @@ public final class AriInputBuffer {
     pendingKeys.removeAll(keepingCapacity: true)
     interactionMode = .cursor
     candidates.removeAll(keepingCapacity: true)
+    candidateRevolverContext = nil
     isInEnglishTail = contiguousLiteralTailBeforeCursor
     return true
   }
 
   public func invalidateUndo() {
     undoStack.removeAll(keepingCapacity: true)
+    candidateRevolverContext = nil
   }
 
   public func clearCandidateContext() {
     candidates.removeAll(keepingCapacity: true)
+    candidateRevolverContext = nil
     if case .candidates = interactionMode { interactionMode = .cursor }
   }
 

@@ -277,6 +277,81 @@ extension InputHandlerTests {
   }
 
   @Test
+  func test_AriTabRevolvesCandidateWithoutOpeningWindow() throws {
+    let (handler, session) = try prepareAriHandler()
+    let cleanup = installAriTestGrams(handler)
+    defer { cleanup(); handler.prefs.ariIMEEnabled = false; handler.clear() }
+
+    typeSentence("su3cl3")
+    #expect(handler.ariBuffer.displayedText == "你好")
+    var revolvedValues = [handler.ariBuffer.displayedText]
+    #expect(handler.triageInput(event: KBEvent.KeyEventData.dataTab.asEvent))
+    #expect(handler.ariBuffer.displayedText == "妳好")
+    revolvedValues.append(handler.ariBuffer.displayedText)
+    #expect(session.state.type == .ofInputting)
+    #expect(handler.ariBuffer.interactionMode == .cursor)
+    #expect(session.recentCommissions.isEmpty)
+
+    #expect(handler.triageInput(event: KBEvent.KeyEventData.dataTab.asEvent))
+    #expect(handler.ariBuffer.displayedText == "妮好")
+    revolvedValues.append(handler.ariBuffer.displayedText)
+    #expect(handler.triageInput(event: KBEvent.KeyEventData.dataTab.asEvent))
+    #expect(handler.ariBuffer.displayedText == "擬好")
+    revolvedValues.append(handler.ariBuffer.displayedText)
+    #expect(Set(revolvedValues).count == 4)
+
+    let shiftTab = KBEvent.KeyEventData(
+      flags: .shift, chars: "\t", keyCode: KeyCode.kTab.rawValue
+    ).asEvent
+    #expect(handler.triageInput(event: shiftTab))
+    #expect(handler.ariBuffer.displayedText == revolvedValues[2])
+    #expect(session.state.type == .ofInputting)
+  }
+
+  @Test
+  func test_AriTabPlacesRawKeysAfterPhraseCandidates() throws {
+    let (handler, session) = try prepareAriHandler()
+    let cleanup = installAriTestGrams(handler)
+    defer { cleanup(); handler.prefs.ariIMEEnabled = false; handler.clear() }
+
+    typeSentence("1u3ru41p3")
+    #expect(handler.ariBuffer.displayedText == "筆記本")
+
+    #expect(handler.triageInput(event: KBEvent.KeyEventData.dataTab.asEvent))
+    #expect(handler.ariBuffer.displayedText == "筆記1p3")
+    #expect(session.state.type == .ofInputting)
+    #expect(handler.ariBuffer.interactionMode == .cursor)
+  }
+
+  @Test
+  func test_AriTabCanSelectRawKeysAndUndo() throws {
+    let (handler, _) = try prepareAriHandler()
+    let cleanup = installAriTestGrams(handler)
+    defer { cleanup(); handler.prefs.ariIMEEnabled = false; handler.clear() }
+
+    typeSentence("su3")
+    #expect(handler.ariBuffer.displayedText == "你")
+    #expect(handler.triageInput(event: KBEvent.KeyEventData.dataTab.asEvent))
+    #expect(handler.ariBuffer.displayedText == "su3")
+    #expect(handler.ariBuffer.cells.allSatisfy { !$0.isChinese })
+
+    // 原始鍵只是候選輪替的一站；下一次 Tab 必須繼續到後面的單字候選。
+    #expect(handler.triageInput(event: KBEvent.KeyEventData.dataTab.asEvent))
+    #expect(handler.ariBuffer.displayedText == "妳")
+    #expect(handler.ariBuffer.cells.allSatisfy { $0.isChinese })
+
+    let shiftTab = KBEvent.KeyEventData(
+      flags: .shift, chars: "\t", keyCode: KeyCode.kTab.rawValue
+    ).asEvent
+    #expect(handler.triageInput(event: shiftTab))
+    #expect(handler.ariBuffer.displayedText == "su3")
+
+    let undo = KBEvent.KeyEventData(flags: .control, chars: "z").asEvent
+    #expect(handler.triageInput(event: undo))
+    #expect(handler.ariBuffer.cells.map(\.isChinese).contains(true))
+  }
+
+  @Test
   func test_AriControlPunctuationStaysAfterComposition() throws {
     let (handler, session) = try prepareAriHandler()
     let cleanup = installAriTestGrams(handler)
@@ -411,8 +486,11 @@ extension InputHandlerTests {
     let data = """
     ㄋㄧˇ-ㄏㄠˇ 你好 -0.5
     ㄋㄧˇ-ㄏㄠˇ 妳好 -0.7
+    ㄋㄧˇ-ㄏㄠˇ 妮好 -0.8
+    ㄋㄧˇ-ㄏㄠˇ 擬好 -0.9
     ㄋㄧˇ 你 -1
     ㄋㄧˇ 妳 -2
+    ㄋㄧˇ 妮 -3
     ㄏㄠˇ 好 -1
     ㄨㄛˇ 我 -1
     ㄏㄠˇ-ㄨㄛˇ 好窩 -0.7
@@ -427,6 +505,11 @@ extension InputHandlerTests {
     ㄅㄧˇ-ㄉㄧㄢˋ 筆電 -0.5
     ㄅㄧˇ 筆 -1
     ㄉㄧㄢˋ 電 -1
+    ㄅㄧˇ-ㄐㄧˋ-ㄅㄣˇ 筆記本 -0.4
+    ㄐㄧˋ 記 -1
+    ㄅㄣˇ 本 -1
+    ㄅㄣˇ 苯 -2
+    ㄅㄣˇ 畚 -3
     ㄧㄥˊ-ㄇㄨˋ 螢幕 -0.5
     ㄧㄥˊ 螢 -1
     ㄇㄨˋ 幕 -1
