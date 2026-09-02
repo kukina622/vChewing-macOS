@@ -269,6 +269,11 @@ extension InputHandlerTests {
     #expect(controller.expanded)
     #expect(controller.lineNavigationCount == 1)
     #expect(handler.ariBuffer.interactionMode == .candidates(focus: 1))
+
+    #expect(handler.triageInput(event: KBEvent.KeyEventData.dataArrowRight.asEvent))
+    #expect(controller.highlightNavigationCount == 0)
+    #expect(controller.lineNavigationCount == 2)
+    #expect(handler.ariBuffer.interactionMode == .candidates(focus: 1))
   }
 
   @Test

@@ -760,10 +760,14 @@ extension InputHandlerProtocol {
     }
     if input.isPageDown { _ = controller.showNextPage(); return true }
     if input.isPageUp { _ = controller.showPreviousPage(); return true }
-    // 唯音既有操作：候選窗尚未展開時，右方向鍵先展開候選框。
-    // 展開後再按右鍵，才依 Ari 規則移到相鄰 cell。
-    if input.isRight, !controller.expanded {
+    // 唯音既有操作：候選窗尚未展開時，右方向鍵先展開候選框；展開後繼續
+    // 以整列為單位向右捲動。不可只移動 highlight，也不可落入相鄰 cell 導航。
+    if input.isRight {
       _ = controller.showNextLine()
+      return true
+    }
+    if input.isLeft, controller.expanded {
+      _ = controller.showPreviousLine()
       return true
     }
     if input.isHome || input.isEnd || input.isLeft || input.isRight {
